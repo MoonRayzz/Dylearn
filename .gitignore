@@ -46,3 +46,4 @@ app.*.map.json
 
 # Menyembunyikan API Key dan konfigurasi rahasia
 .env
+lib/firebase_options.dart
