@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "693022696578",
+    "project_id": "dylearn-1f3da",
+    "storage_bucket": "dylearn-1f3da.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:693022696578:android:61fd7eaede3a800935009b",
+        "android_client_info": {
+          "package_name": "com.example.dylearn"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "693022696578-gopkuuci4r5desc5a4qs474a4g33aek8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.dylearn",
+            "certificate_hash": "b688eb7f71beeb6a1356eeaa5bdc8b6981d2f0f7"
+          }
+        },
+        {
+          "client_id": "693022696578-jff2i5t2faeuv832elda8hpgkdr2m0sb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbTWFoHRhb2vLZ6XTEg9cfXdYlKO7uCU4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "693022696578-jff2i5t2faeuv832elda8hpgkdr2m0sb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

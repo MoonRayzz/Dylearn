@@ -1,0 +1,138 @@
+name: dylearn
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+   # --- Firebase Core & Auth ---
+  firebase_core: ^4.2.1
+  firebase_auth: ^6.1.2
+  cloud_firestore: ^6.1.0
+  firebase_storage: ^13.0.4 # PENTING: Untuk simpan gambar agar Firestore tidak penuh
+  google_sign_in: ^6.2.2
+
+  # --- State Management ---
+  provider: ^6.1.2
+
+  # --- UI & Design ---
+  cupertino_icons: ^1.0.8
+  google_fonts: ^8.0.0      # Untuk variasi font UI (selain OpenDyslexic)
+  lottie: ^3.1.3            # Animasi vektor
+  gap: ^3.0.1               # Pengganti SizedBox yang lebih mudah dibaca
+  flutter_animate: ^4.5.0   # Animasi UI sederhana (fade in list, dll)
+  cached_network_image: ^3.4.1 # Cache gambar agar hemat data
+
+  # --- Functional Features ---
+  image_picker: ^1.1.2
+  file_picker: ^10.3.7       # Versi stabil untuk pick file
+  flutter_tts: ^4.1.0       # Text to Speech
+  pdfrx: ^2.2.16            # PDF Viewer & Renderer
+  image: ^4.2.0             # Image processing (crop/resize)
+  
+  # --- Utilities ---
+  shared_preferences: ^2.3.2
+  intl: ^0.20.2             # Format tanggal
+  uuid: ^4.5.1              # Generate ID unik untuk file
+  path_provider: ^2.1.4     # Akses direktori HP
+  permission_handler: ^12.0.1 # Menangani izin akses (storage/camera)
+  http: ^1.6.0
+  fl_chart: ^1.1.1
+  speech_to_text: ^7.3.0
+
+  flutter_localizations:
+    sdk: flutter
+  share_plus: ^12.0.1
+  flutter_launcher_icons: ^0.14.4
+  image_cropper: ^11.0.0
+  glassy_real_navbar: ^1.0.4
+  video_player: ^2.10.1
+  crypto: ^3.0.7
+  pdf: ^3.12.0
+  google_generative_ai: ^0.4.7
+  connectivity_plus: ^7.0.0
+  google_mlkit_text_recognition: ^0.15.1
+  showcaseview: ^5.0.1
+  google_mlkit_document_scanner: ^0.4.1
+  flutter_dotenv: ^6.0.0
+  flutter_local_notifications: ^20.1.0
+  timezone: ^0.10.1
+  flutter_timezone: ^5.0.1
+  wakelock_plus: ^1.4.0
+  palette_generator: ^0.3.3+7
+  syncfusion_flutter_xlsio: ^32.2.9
+  adaptive_platform_ui: ^0.1.103
+  printing: ^5.14.3
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/icon.png" # Sesuaikan dengan lokasi gambar Anda
+  min_sdk_android: 21 # Penting untuk Android modern
+  adaptive_icon_background: "#FFFFFF" # Warna background (putih)
+  adaptive_icon_foreground: "assets/images/icon.png"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  
+  # Asset folder harus dibuat di root project (sejajar dengan lib)
+  assets:
+    - .env
+    - assets/images/
+    - assets/animations/
+    - assets/videos/
+    
+  # Font OpenDyslexic (Wajib tetap ada untuk aksesibilitas)
+  fonts:
+    - family: OpenDyslexic
+      fonts:
+        - asset: assets/fonts/OpenDyslexic-Regular.otf
+        - asset: assets/fonts/OpenDyslexic-Bold.otf
+          weight: 700
+        - asset: assets/fonts/OpenDyslexic-Italic.otf
+          style: italic
+
+    - family: ComicNeue
+      fonts:
+        - asset: assets/fonts/ComicNeue-Regular.ttf
+        - asset: assets/fonts/ComicNeue-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/ComicNeue-Italic.ttf
+          style: italic
+
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter-Italic.ttf
+          style: italic
+
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-Regular.ttf
+        - asset: assets/fonts/Poppins-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Poppins-Italic.ttf
+          style: italic
+
+    - family: TrikaIndoDyslexic3
+      fonts:
+        - asset: assets/fonts/TrikaIndoDyslexic3.ttf
+        - asset: assets/fonts/TrikaIndoDyslexic3.ttf
+          weight: 700

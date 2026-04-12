@@ -1,0 +1,4 @@
+node_modules/
+*.local
+# Menyembunyikan API Key dan konfigurasi rahasia
+.env
