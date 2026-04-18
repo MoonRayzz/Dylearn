@@ -478,6 +478,10 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
         _lastPracticeSentenceIndex = _currentSentenceIndex;
       });
       _checkAndSyncPageForward();
+      // Scroll ke kalimat aktif jika masih dalam halaman yang sama
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToActiveSentence(isInitialLoad: false),
+      );
       _savePracticeProgress();
     }
   }
@@ -489,6 +493,10 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
         _lastPracticeSentenceIndex = _currentSentenceIndex;
       });
       _checkAndSyncPageForward();
+      // Scroll ke kalimat aktif jika masih dalam halaman yang sama
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToActiveSentence(isInitialLoad: false),
+      );
       _savePracticeProgress();
     }
   }
@@ -1315,10 +1323,7 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
                   if (!isPractice) return const SizedBox.shrink();
                   return PracticeMicPanel(
                     onPracticeDone: _handlePracticeResult,
-                    onCancel: () {
-                      _savePracticeProgress();
-                      _togglePracticeMode();
-                    },
+                    onCancel: _togglePracticeMode, // _togglePracticeMode sudah memanggil _savePracticeProgress() secara internal
                     onFinishAll: _handleFinishAll,
                     onNext: _practiceNext,
                     onPrev: _practicePrev,

@@ -51,6 +51,9 @@ class ReadingEvaluator {
             final double nextSimilarity =
                 _calculateSimilarity(origWord, cleanSpoken[spokenIndex + lookAhead]);
             if (nextSimilarity >= 0.5) {
+              // Note: kata STT ekstra di antara spokenIndex dan lookAhead
+              // adalah "insertion" (diucapkan berlebih), bukan kata original yang hilang;
+              // dengan advance spokenIndex += lookAhead + 1 kata ekstra itu terlewati otomatis.
               results.add(WordEvaluation(
                 originalWord: origWord,
                 spokenWord:   cleanSpoken[spokenIndex + lookAhead],
