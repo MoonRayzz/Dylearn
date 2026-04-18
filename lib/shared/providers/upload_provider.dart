@@ -16,6 +16,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/services/ocr_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/notification_service.dart';
+// [PERBAIKAN 2 Note]: Pastikan kamu mengimport preprocessor untuk bisa memanggil ImagePreprocessProfile.skip
+import '../../core/services/ocr_image_preprocessor.dart'; 
 
 final RegExp _reWhitespace        = RegExp(r'\s+');
 final RegExp _reLeadingWhitespace = RegExp(r'^\s+', multiLine: true);
@@ -88,8 +90,8 @@ Future<RenderResult> _renderPdfInIsolate(PdfProcessArgs args) async {
       }
 
       final upscaledPdfImage = await page.render(
-        width:           (page.width * 2.5).toInt(),
-        height:          (page.height * 2.5).toInt(),
+        width:           page.width.toInt(),
+        height:          page.height.toInt(),
         backgroundColor: 0xFFFFFFFF,
       );
 
@@ -102,10 +104,17 @@ Future<RenderResult> _renderPdfInIsolate(PdfProcessArgs args) async {
           numChannels: 4,
         );
         upscaledPdfImage.dispose();
-        final upscaledJpgBytes = img.encodeJpg(imageUpscaled, quality: 95);
+        
+        // ------------------------------------------------------------------
+        // [PERBAIKAN 1]: Gunakan PNG agar gambar tidak pecah/noise (lossless) 
+        // untuk diproses oleh ML Kit OCR.
+        // ------------------------------------------------------------------
+        final upscaledPngBytes = img.encodePng(imageUpscaled);
         final File upscaledFile = File(
-            '${args.tempDirPath}/book_upscaled_${pageTs}_$pageNumber.jpg');
-        await upscaledFile.writeAsBytes(upscaledJpgBytes);
+            '${args.tempDirPath}/book_upscaled_${pageTs}_$pageNumber.png');
+        await upscaledFile.writeAsBytes(upscaledPngBytes);
+        // ------------------------------------------------------------------
+        
         upscaledPaths.add(upscaledFile.path);
       }
     }
@@ -153,7 +162,6 @@ class UploadProvider with ChangeNotifier {
 
   void resetState() {
     _isProcessing          = false;
-    // FIX: reset flag ini agar getter tidak stuck true setelah proses selesai/error
     _isPublicUploadRunning = false;
     _progressValue         = 0.0;
     _statusMessage         = '';
@@ -191,8 +199,6 @@ class UploadProvider with ChangeNotifier {
     required String userId,
     File? coverImage,
   }) async {
-    // FIX: concurrent guard — tolak panggilan baru jika masih processing
-    // tanpa guard, state bisa tertimpa di tengah proses yang sedang berjalan
     if (_isProcessing) return;
 
     _isProcessing          = true;
@@ -201,8 +207,6 @@ class UploadProvider with ChangeNotifier {
 
     _updateProgress(0.1, 'Menyiapkan mesin PDF...');
 
-    // FIX: flag untuk melacak apakah OcrService sudah di-dispose
-    // agar tidak dipanggil dua kali (sekali di happy path, sekali di catch)
     bool _ocrDisposed = false;
 
     void disposeOcrOnce() {
@@ -254,8 +258,16 @@ class UploadProvider with ChangeNotifier {
         final File upscaledImg =
             File(renderResult.upscaledImagePaths[i]);
 
-        final OcrResult ocrRes =
-            await OcrService.convertImageToText(upscaledImg);
+        // ------------------------------------------------------------------
+        // [PERBAIKAN 2]: Tambahkan parameter ImagePreprocessProfile.skip 
+        // agar gambar PDF (yg sudah tajam & bersih) tidak diblur dan di-resize 
+        // secara paksa oleh sistem preprocessor.
+        // ------------------------------------------------------------------
+        final OcrResult ocrRes = await OcrService.convertImageToText(
+          upscaledImg,
+          preprocessProfile: ImagePreprocessProfile.skip, 
+        );
+        // ------------------------------------------------------------------
 
         final int passCount = ocrRes.metadata['aiPasses'] as int? ?? 0;
         if (passCount > 0) {
@@ -415,8 +427,6 @@ class UploadProvider with ChangeNotifier {
       _updateProgress(0.0, _statusMessage, isError: true);
       debugPrint('❌ UploadProvider Error: $e');
 
-      // FIX: panggil disposeOcrOnce() bukan OcrService.dispose() langsung
-      // agar tidak double-dispose jika exception terjadi setelah happy path dispose
       disposeOcrOnce();
 
       if (!_isDisposed) {

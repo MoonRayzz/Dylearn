@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
 import 'package:flutter_tts/flutter_tts.dart';
 
 import '../../core/models/reading_session.dart';
@@ -14,14 +13,19 @@ import '../../core/utils/responsive_helper.dart';
 import '../../core/utils/text_utils.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PracticeMicPanel — Mode Latihan Membaca Nyaring (Fullscreen)
+// PracticeMicPanel v2 — Mode Latihan Membaca Nyaring (Dyslexia-Friendly)
 //
-// Fitur utama:
-//   • Feedback warna per kata: hijau (benar) / kuning (kurang tepat) / merah (salah)
-//   • Underline kata aktif saat TTS berjalan — baik di teks polos maupun hasil evaluasi
-//   • Mode Baca Lambat: pauseFor 5 detik + auto-restart agar anak yang baca pelan
-//     tidak kehilangan kata karena engine timeout
-//   • Mode Eja: suku kata berwarna bergantian, underline tetap muncul di kata aktif
+// Perubahan utama dari v1:
+//   • Background hangat krem (#FFF8E1) konsisten dgn tab Mendengarkan —
+//     riset disleksia merekomendasikan bg krem/kuning muda vs gelap
+//   • Feedback kata: warna gelap + thick TextDecoration.underline persisten
+//     agar tidak bergantung hanya pada warna (aksesibilitas buta warna)
+//   • Mode Eja: suku kata bergantian warna gelap (ungu/teal) pada bg terang
+//   • Pesan skor 5 level dengan bahasa yang lebih empatik & presisi
+//   • Kartu hasil disederhanakan: skor + emoji + pesan; detail di-collapse
+//   • Tombol "Selesai" di-disable secara visual sebelum ada kalimat yang dilatih
+//   • Badge TTS tampil terus (bahkan saat kartu hasil terbuka)
+//   • Status TTS tetap terlihat saat sedang mendengarkan kalimat
 // ══════════════════════════════════════════════════════════════════════════════
 
 class PracticeMicPanel extends StatefulWidget {
@@ -40,7 +44,7 @@ class PracticeMicPanel extends StatefulWidget {
   /// Callback pindah ke kalimat sebelumnya
   final VoidCallback onPrev;
 
-  /// Teks kalimat aktif (panduan + feedback warna di sini)
+  /// Teks kalimat aktif
   final String activeSentenceText;
 
   /// Index kalimat aktif (0-based)
@@ -49,7 +53,7 @@ class PracticeMicPanel extends StatefulWidget {
   /// Total kalimat di buku
   final int totalSentences;
 
-  /// Hasil evaluasi kalimat aktif — ditampilkan di kotak kalimat di panel ini
+  /// Hasil evaluasi kalimat aktif
   final List<WordEvaluation>? lastEvaluationResult;
 
   /// Apakah tombol Sebelumnya aktif
@@ -57,6 +61,10 @@ class PracticeMicPanel extends StatefulWidget {
 
   /// Apakah tombol Berikutnya aktif
   final bool canGoNext;
+
+  /// Jumlah kalimat yang sudah pernah dilatih (seluruh buku, bukan hanya aktif).
+  /// Digunakan untuk mengaktifkan tombol "Selesai Latihan".
+  final int totalSentencesPracticed;
 
   const PracticeMicPanel({
     super.key,
@@ -71,6 +79,7 @@ class PracticeMicPanel extends StatefulWidget {
     this.lastEvaluationResult,
     this.canGoPrev = false,
     this.canGoNext = false,
+    this.totalSentencesPracticed = 0,
   });
 
   @override
@@ -88,28 +97,34 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
   late final Animation<double> _pulseAnimation;
 
   bool _showResult = false;
+  bool _showDetail = false; // toggle detail stat pada result card
   double _lastAccuracy = 0.0;
 
+  // ── Tema warna: warm cream / dyslexia-friendly ────────────────────────────
+  static const Color _bgTop       = Color(0xFFFFF8E1); // amber 50
+  static const Color _bgBottom    = Color(0xFFFFF3E0); // orange 50
+  static const Color _accent      = Color(0xFFE65100); // deep orange
+  static const Color _textPrimary = Color(0xFF1A237E); // dark navy
+  static const Color _textBody    = Color(0xFF3E2723); // dark brown
 
-  // ── Tema warna ────────────────────────────────────────────────────────────
-  static const Color _bgTop = Color(0xFF0D1B4B);
-  static const Color _bgBottom = Color(0xFF1A237E);
-  static const Color _accent = Color(0xFFFFD54F);
-  static const Color _micActive = Color(0xFFEF5350);
-  static const Color _micIdle = Color(0xFFFFD54F);
-  static const Color _successColor = Color(0xFF66BB6A);
-  static const Color _warningColor = Color(0xFFFFA726);
+  static const Color _micActive = Color(0xFFC62828); // dark red
+  static const Color _micIdle   = Color(0xFFE65100); // deep orange
 
-  // ── Warna evaluasi per kata ────────────────────────────────────────────────
-  static const Color _evalCorrect = Color(0xFF66BB6A);
-  static const Color _evalPartial = Color(0xFFFFA726);
-  static const Color _evalWrong   = Color(0xFFEF5350);
+  static const Color _successColor = Color(0xFF2E7D32); // dark green
+  static const Color _warningColor = Color(0xFFF57F17); // dark amber
 
-  // ── Warna suku kata untuk background gelap panel latihan ──────────────────
-  // Lebih terang dari versi reading_components (background krem) agar
-  // tetap terbaca di atas gradien navy gelap.
-  static const Color _sylColorA = Color(0xFFCE93D8); // ungu muda
-  static const Color _sylColorB = Color(0xFF80DEEA); // cyan muda
+  // ── Warna evaluasi (gelap agar kontras di bg terang) ──────────────────────
+  static const Color _evalCorrect = Color(0xFF2E7D32); // dark green
+  static const Color _evalPartial = Color(0xFFF57F17); // dark amber
+  static const Color _evalWrong   = Color(0xFFC62828); // dark red
+
+  // ── Warna suku kata bergantian (mode eja, bg terang) ─────────────────────
+  static const Color _sylColorA = Color(0xFF6A1B9A); // dark purple
+  static const Color _sylColorB = Color(0xFF006064); // dark teal
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // LIFECYCLE
+  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -149,8 +164,10 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
       _ttsHighlightNotifier.value = null;
       _sttService.recognizedTextNotifier.value = '';
       _sttService.errorNotifier.value = '';
+      _showDetail = false;
       _syncResult();
     } else if (widget.lastEvaluationResult != oldWidget.lastEvaluationResult) {
+      _showDetail = false;
       _syncResult();
     }
   }
@@ -187,21 +204,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
       _pulseController
         ..stop()
         ..reset();
-      // FIX: jangan langsung ambil recognizedTextNotifier.value di sini.
-      //
-      // Race condition lama:
-      //   isListening → false  (dipanggil dari _onStatus 'done')
-      //   _onListeningChanged fire → ambil teks → kata terakhir BELUM ada
-      //   _onSpeechResult final result tiba → terlambat, sudah diproses
-      //
-      // Fix: tunggu 1 microtask agar semua ValueNotifier listener dari
-      // _onSpeechResult selesai diproses lebih dulu, BARU ambil teks.
-      // Dengan perbaikan di SttService (_onSpeechResult final → set isListening=false
-      // via Future.microtask), urutan sekarang adalah:
-      //   _onSpeechResult final → recognizedTextNotifier.value = teks lengkap
-      //                         → Future.microtask: isListening = false
-      //                         → _onListeningChanged fire (teks sudah lengkap)
-      // Tapi untuk jaga-jaga (edge case Android lama), tetap pakai microtask di sini
+      // Fix race condition: tunggu microtask agar recognizedText sudah final
       Future.microtask(() {
         if (!mounted) return;
         final text = _sttService.recognizedTextNotifier.value.trim();
@@ -239,27 +242,28 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
     }
   }
 
-  // ── Helpers skor ──────────────────────────────────────────────────────────
+  // ── Helpers skor: 5 level, bahasa empatik ─────────────────────────────────
   Color _scoreColor(double s) =>
-      s >= 80 ? _successColor : (s >= 50 ? _warningColor : Colors.redAccent);
+      s >= 80 ? _successColor : (s >= 50 ? _warningColor : Colors.red.shade700);
+
   String _scoreEmoji(double s) =>
-      s >= 90 ? '🌟' : (s >= 75 ? '👍' : (s >= 50 ? '💪' : '🔄'));
+      s >= 90 ? '🌟' : (s >= 75 ? '👍' : (s >= 55 ? '💪' : (s >= 35 ? '🔄' : '👂')));
+
   String _scoreMsg(double s) {
-    if (s >= 90) return 'Luar Biasa! Sempurna!';
-    if (s >= 80) return 'Hebat! Terus berlatih!';
-    if (s >= 60) return 'Bagus! Hampir sempurna!';
-    if (s >= 40) return 'Ayo coba lagi, kamu bisa!';
-    return 'Yuk dicoba sekali lagi!';
+    if (s >= 90) return 'Luar Biasa! Bacaanmu Sempurna!';
+    if (s >= 75) return 'Hebat! Kamu Sudah Membaca dengan Baik!';
+    if (s >= 55) return 'Bagus! Terus Semangat Berlatih!';
+    if (s >= 35) return 'Jangan Menyerah, Kamu Pasti Bisa!';
+    return 'Coba Dengarkan Dulu, Lalu Baca Lagi!';
   }
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // BUILD — FULLSCREEN
-  // ════════════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ═════════════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
     final r = ResponsiveHelper(context);
-    // Ambil settings untuk font yang sama dengan halaman Mendengarkan
     final settings = context.watch<SettingsProvider>();
 
     return Material(
@@ -275,26 +279,38 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
         child: SafeArea(
           child: Column(
             children: [
-              // ── AppBar mode latihan ───────────────────────────────────────
+              // AppBar mode latihan
               _buildTopBar(r),
 
-              // ── Konten utama (scrollable) ─────────────────────────────────
+              // Konten utama (scrollable)
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   padding: EdgeInsets.symmetric(
                     horizontal: r.spacing(20),
-                    vertical: r.spacing(8),
+                    vertical: r.spacing(12),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // ── Kotak kalimat (dengan feedback warna jika sudah dilatih)
+                      // Kartu kalimat
                       _buildSentenceCard(r, settings),
+                      SizedBox(height: r.spacing(16)),
 
-                      SizedBox(height: r.spacing(24)),
+                      // Badge TTS — tampil selama TTS memutar, termasuk saat ada hasil
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _isTtsPlayingNotifier,
+                        builder: (context, isPlaying, _) => AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: isPlaying
+                              ? _TtsBadge(r: r)
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
 
-                      // ── Area mic + status ─────────────────────────────────
+                      SizedBox(height: r.spacing(8)),
+
+                      // Area mic + status + kartu hasil
                       ValueListenableBuilder<bool>(
                         valueListenable: _sttService.isListeningNotifier,
                         builder: (context, isListening, _) => Column(
@@ -303,9 +319,6 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                             _buildMicButton(isListening, r),
                             SizedBox(height: r.spacing(14)),
                             _buildStatusText(isListening, r),
-
-
-                            // Kartu hasil (skor % + ✅🟡❌)
                             if (_showResult && !isListening) ...[
                               SizedBox(height: r.spacing(12)),
                               _buildResultCard(r),
@@ -314,20 +327,31 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                         ),
                       ),
 
-                      // ── Error message ─────────────────────────────────────
+                      // Pesan error STT
                       ValueListenableBuilder<String>(
                         valueListenable: _sttService.errorNotifier,
                         builder: (context, err, _) {
                           if (err.isEmpty) return const SizedBox.shrink();
                           return Padding(
                             padding: EdgeInsets.only(top: r.spacing(10)),
-                            child: Text(
-                              '⚠️ $err',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.comicNeue(
-                                fontSize: r.font(12),
-                                color: Colors.redAccent.shade100,
-                                fontWeight: FontWeight.bold,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: r.spacing(16),
+                                vertical: r.spacing(8),
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: Text(
+                                '⚠️ $err',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.comicNeue(
+                                  fontSize: r.font(12),
+                                  color: Colors.red.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           );
@@ -340,7 +364,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                 ),
               ),
 
-              // ── Footer: navigasi + tombol selesai ────────────────────────
+              // Footer: navigasi + tombol selesai
               _buildFooter(r),
             ],
           ),
@@ -350,9 +374,13 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
   }
 
   // ── AppBar: badge + counter + tombol kembali ──────────────────────────────
-  Widget _buildTopBar(ResponsiveHelper r) => Padding(
+  Widget _buildTopBar(ResponsiveHelper r) => Container(
         padding: EdgeInsets.fromLTRB(
-          r.spacing(16), r.spacing(8), r.spacing(16), 0),
+            r.spacing(16), r.spacing(12), r.spacing(16), r.spacing(10)),
+        decoration: BoxDecoration(
+          color: _accent.withOpacity(0.07),
+          border: Border(bottom: BorderSide(color: _accent.withOpacity(0.15))),
+        ),
         child: Row(
           children: [
             // Badge MODE LATIHAN
@@ -367,14 +395,14 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.school_rounded,
-                      color: _bgBottom, size: r.size(14)),
+                      color: Colors.white, size: r.size(14)),
                   SizedBox(width: r.spacing(5)),
                   Text(
                     'MODE LATIHAN',
                     style: GoogleFonts.comicNeue(
                       fontSize: r.font(11),
                       fontWeight: FontWeight.w900,
-                      color: _bgBottom,
+                      color: Colors.white,
                       letterSpacing: 0.8,
                     ),
                   ),
@@ -384,14 +412,13 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
 
             SizedBox(width: r.spacing(10)),
 
-            // Counter kalimat
             if (widget.totalSentences > 0)
               Expanded(
                 child: Text(
                   'Kalimat ${widget.currentSentenceIndex + 1} / ${widget.totalSentences}',
                   style: GoogleFonts.comicNeue(
                     fontSize: r.font(12),
-                    color: Colors.white60,
+                    color: _textPrimary.withOpacity(0.65),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -406,22 +433,22 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                 padding: EdgeInsets.symmetric(
                     horizontal: r.spacing(12), vertical: r.spacing(8)),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.12),
+                  color: _textPrimary.withOpacity(0.06),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white24),
+                  border: Border.all(color: _textPrimary.withOpacity(0.15)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.volume_up_rounded,
-                        color: Colors.white70, size: r.size(14)),
+                        color: _textPrimary.withOpacity(0.65), size: r.size(14)),
                     SizedBox(width: r.spacing(5)),
                     Text(
                       'Dengarkan',
                       style: GoogleFonts.comicNeue(
                         fontSize: r.font(11),
                         fontWeight: FontWeight.w900,
-                        color: Colors.white70,
+                        color: _textPrimary.withOpacity(0.65),
                       ),
                     ),
                   ],
@@ -432,40 +459,55 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
         ),
       );
 
-  // ── Kotak kalimat: normal atau berwarna (feedback evaluasi) ───────────────
+  // ── Kartu kalimat ─────────────────────────────────────────────────────────
   Widget _buildSentenceCard(ResponsiveHelper r, SettingsProvider settings) {
-    return Container(
+    final borderColor = _showResult
+        ? _scoreColor(_lastAccuracy).withOpacity(0.45)
+        : _accent.withOpacity(0.3);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       width: double.infinity,
-      constraints: BoxConstraints(minHeight: r.size(120)),
+      constraints: BoxConstraints(minHeight: r.size(100)),
       padding: EdgeInsets.all(r.spacing(20)),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.07),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          // Border kuning saat belum/sedang rekam, berubah sesuai skor setelah selesai
-          color: _showResult
-              ? _scoreColor(_lastAccuracy).withOpacity(0.6)
-              : _accent.withOpacity(0.4),
-          width: 1.5,
-        ),
+        border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Label
-          Text(
-            _showResult ? 'Hasil bacaanmu:' : 'Bacalah kalimat ini:',
-            style: GoogleFonts.comicNeue(
-              fontSize: r.font(11),
-              color: Colors.white38,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-            ),
+          // Label dengan ikon
+          Row(
+            children: [
+              Icon(
+                _showResult ? Icons.fact_check_rounded : Icons.menu_book_rounded,
+                color: _showResult ? _scoreColor(_lastAccuracy) : _accent,
+                size: r.size(15),
+              ),
+              SizedBox(width: r.spacing(6)),
+              Text(
+                _showResult ? 'Hasil bacaanmu:' : 'Bacalah kalimat ini:',
+                style: GoogleFonts.comicNeue(
+                  fontSize: r.font(11),
+                  color: _showResult ? _scoreColor(_lastAccuracy) : _accent,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: r.spacing(10)),
+          SizedBox(height: r.spacing(12)),
 
-          // Selalu listen ke _ttsHighlightNotifier agar underline muncul
-          // baik saat teks polos (belum latihan) maupun teks berwarna (sudah latihan).
+          // Teks kalimat (dengan atau tanpa evaluasi)
           ValueListenableBuilder<TextRange?>(
             valueListenable: _ttsHighlightNotifier,
             builder: (context, highlight, _) {
@@ -487,27 +529,27 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
             },
           ),
 
-          // ── Tombol Dengarkan Teks ────────────────────────────────────────
           SizedBox(height: r.spacing(14)),
+
+          // Tombol Dengarkan Teks
           ValueListenableBuilder<bool>(
             valueListenable: _isTtsPlayingNotifier,
-            builder: (context, isPlaying, _) => GestureDetector(
+            builder: (context, isPlaying, _) => InkWell(
+              borderRadius: BorderRadius.circular(30),
               onTap: () => _speakSentence(settings),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: EdgeInsets.symmetric(
-                  horizontal: r.spacing(16),
-                  vertical: r.spacing(9),
-                ),
+                    horizontal: r.spacing(16), vertical: r.spacing(9)),
                 decoration: BoxDecoration(
                   color: isPlaying
-                      ? const Color(0xFF29B6F6).withOpacity(0.25)
-                      : Colors.white.withOpacity(0.08),
+                      ? Colors.blue.shade50
+                      : _accent.withOpacity(0.07),
                   borderRadius: BorderRadius.circular(30),
                   border: Border.all(
                     color: isPlaying
-                        ? const Color(0xFF29B6F6).withOpacity(0.7)
-                        : Colors.white24,
+                        ? Colors.blue.shade300
+                        : _accent.withOpacity(0.3),
                     width: 1.5,
                   ),
                 ),
@@ -518,9 +560,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                       isPlaying
                           ? Icons.stop_circle_rounded
                           : Icons.volume_up_rounded,
-                      color: isPlaying
-                          ? const Color(0xFF29B6F6)
-                          : Colors.white60,
+                      color: isPlaying ? Colors.blue.shade700 : _accent,
                       size: r.size(16),
                     ),
                     SizedBox(width: r.spacing(7)),
@@ -529,9 +569,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                       style: GoogleFonts.comicNeue(
                         fontSize: r.font(12),
                         fontWeight: FontWeight.w900,
-                        color: isPlaying
-                            ? const Color(0xFF29B6F6)
-                            : Colors.white60,
+                        color: isPlaying ? Colors.blue.shade700 : _accent,
                       ),
                     ),
                   ],
@@ -544,8 +582,13 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
     );
   }
 
-  /// Teks panduan (belum dilatih) dengan underline putih pada kata aktif TTS.
-  /// Mode eja: suku kata bergantian ungu/cyan, kata aktif dapat underline.
+  // ═════════════════════════════════════════════════════════════════════════
+  // TEXT RENDERING
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /// Teks panduan (belum dievaluasi).
+  /// Mode eja: suku kata bergantian warna gelap (ungu / teal).
+  /// Active TTS: background kuning-oranye muda pada kata aktif.
   Widget _buildTtsHighlightedText(
     String text,
     TextRange? highlight,
@@ -557,7 +600,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
       fontSize: r.font(20) * settings.textScaleFactor,
       letterSpacing: settings.letterSpacing,
       height: settings.lineHeight,
-      color: _accent,
+      color: _textPrimary,
       fontWeight: FontWeight.bold,
     );
 
@@ -567,7 +610,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
 
     final segments  = TextUtils.tokenizeWords(text);
     final spans     = <InlineSpan>[];
-    int charOffset  = 0;
+    int   charOffset = 0;
 
     for (final seg in segments) {
       final segStart    = charOffset;
@@ -583,10 +626,12 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
         continue;
       }
 
-      final wordSpans = _buildWordSpans(seg, base, _accent, settings);
+      // Suku kata bergantian warna (useSyllableColors: true)
+      final wordSpans = _buildWordSpans(seg, base, _textPrimary, settings,
+          useSyllableColors: true);
 
       if (isTtsActive) {
-        spans.add(_underlineSpan(wordSpans, Colors.white, base));
+        spans.add(_ttsActiveSpan(wordSpans, base));
       } else {
         spans.addAll(wordSpans);
       }
@@ -597,8 +642,10 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
     return RichText(text: TextSpan(style: base, children: spans));
   }
 
-  /// Teks berwarna per kata (hasil evaluasi) + underline pada kata aktif TTS.
-  /// Mendukung mode eja: semua suku kata dalam satu kata = warna evaluasi sama.
+  /// Teks berwarna per kata (hasil evaluasi).
+  /// Setiap kata mendapat warna + thick TextDecoration.underline persisten —
+  /// tidak bergantung hanya pada warna (aksesibilitas buta warna).
+  /// Active TTS: background tipis warna evaluasi pada kata aktif.
   Widget _buildEvaluatedText(
     String text,
     List<WordEvaluation> evals,
@@ -616,40 +663,39 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
 
     final segments  = TextUtils.tokenizeWords(text);
     final spans     = <InlineSpan>[];
-    int evalIndex   = 0;
-    int charOffset  = 0;
+    int   evalIndex  = 0;
+    int   charOffset = 0;
 
     for (final seg in segments) {
       final segStart = charOffset;
       final segEnd   = charOffset + seg.raw.length;
 
       if (!seg.isWord) {
-        spans.add(TextSpan(
-          text: seg.raw,
-          style: base.copyWith(color: Colors.white70),
-        ));
+        spans.add(TextSpan(text: seg.raw, style: base.copyWith(color: _textBody)));
         charOffset = segEnd;
         continue;
       }
 
-      // Tentukan warna evaluasi untuk kata ini
-      Color wordColor = Colors.white;
+      // Warna evaluasi untuk kata ini
+      Color wordColor = _textBody;
       if (evalIndex < evals.length) {
         wordColor = _evalColorFor(evals[evalIndex].status);
         evalIndex++;
       }
 
-      // Cek apakah kata ini sedang diucapkan TTS
+      // Style: warna evaluasi saja (tanpa underline — warna sudah cukup sebagai feedback)
+      final wordStyle = base.copyWith(
+        color: wordColor,
+      );
+
       final isTtsActive = highlight != null &&
           highlight.start < segEnd &&
           highlight.end   > segStart;
 
-      // Bangun konten kata (plain atau suku kata)
-      final wordSpans = _buildWordSpans(seg, base, wordColor, settings);
+      final wordSpans = _buildWordSpans(seg, wordStyle, wordColor, settings);
 
       if (isTtsActive) {
-        // Tambah underline berwarna (warna evaluasi, bukan putih)
-        spans.add(_underlineSpan(wordSpans, wordColor, base));
+        spans.add(_ttsActiveSpanColored(wordSpans, wordColor, base));
       } else {
         spans.addAll(wordSpans);
       }
@@ -658,16 +704,9 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
     }
 
     return RichText(
-      text: TextSpan(
-        style: base.copyWith(color: Colors.white),
-        children: spans,
-      ),
+      text: TextSpan(style: base.copyWith(color: _textBody), children: spans),
     );
   }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // Helper: text rendering
-  // ══════════════════════════════════════════════════════════════════════════
 
   /// Warna evaluasi berdasarkan WordStatus.
   Color _evalColorFor(WordStatus status) {
@@ -679,54 +718,67 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
     }
   }
 
-  /// Bangun list InlineSpan untuk satu kata.
-  /// Mode eja: tiap suku kata bergantian warna A/B dengan warna overide [color].
-  /// Mode normal: satu TextSpan dengan [color].
+  /// Bangun InlineSpan list untuk satu kata.
+  /// [useSyllableColors]: jika true & mode eja aktif, suku kata bergantian
+  /// [_sylColorA] / [_sylColorB]. Jika false, semua suku kata = [color].
   List<InlineSpan> _buildWordSpans(
-    dynamic seg,          // WordSegment dari TextUtils.tokenizeWords
+    dynamic seg,
     TextStyle base,
     Color color,
-    SettingsProvider settings,
-  ) {
+    SettingsProvider settings, {
+    bool useSyllableColors = false,
+  }) {
     if (settings.enableSyllable && seg.syllables.isNotEmpty) {
+      int sylIdx = 0;
       return seg.syllables
-          .map<InlineSpan>((syl) => TextSpan(
-                text: syl.text,
-                // Mode eja: pakai warna evaluasi/accent, bukan warna suku kata bawaan
-                // saat ada evaluasi/TTS agar kontras tetap terjaga
-                style: base.copyWith(color: color),
-              ))
+          .map<InlineSpan>((syl) {
+            final sylColor = useSyllableColors
+                ? (sylIdx % 2 == 0 ? _sylColorA : _sylColorB)
+                : color;
+            sylIdx++;
+            return TextSpan(text: syl.text, style: base.copyWith(color: sylColor));
+          })
           .toList();
     }
     return [TextSpan(text: seg.raw, style: base.copyWith(color: color))];
   }
 
-  /// Bungkus [wordSpans] dengan Container underline [underlineColor].
-  /// padding.bottom = jarak antara baseline teks dan garis bawah.
-  WidgetSpan _underlineSpan(
-    List<InlineSpan> wordSpans,
-    Color underlineColor,
-    TextStyle base,
-  ) {
-    return WidgetSpan(
-      alignment: PlaceholderAlignment.baseline,
-      baseline: TextBaseline.alphabetic,
-      child: Container(
-        padding: const EdgeInsets.only(bottom: 5),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: underlineColor, width: 2.5),
+  /// TTS highlight (teks biasa): background oranye muda tipis.
+  WidgetSpan _ttsActiveSpan(List<InlineSpan> wordSpans, TextStyle base) =>
+      WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: _accent.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(4),
           ),
+          child: RichText(text: TextSpan(style: base, children: wordSpans)),
         ),
-        child: RichText(
-          text: TextSpan(style: base, children: wordSpans),
+      );
+
+  /// TTS highlight (teks evaluasi): background warna evaluasi tipis.
+  /// Underline sudah ada di [wordSpans] melalui TextDecoration, tidak double.
+  WidgetSpan _ttsActiveSpanColored(
+      List<InlineSpan> wordSpans, Color evalColor, TextStyle base) =>
+      WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: evalColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: RichText(text: TextSpan(style: base, children: wordSpans)),
         ),
-      ),
-    );
-  }
+      );
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // MIC BUTTON
+  // ═════════════════════════════════════════════════════════════════════════
 
-  // ── Tombol mic dengan animasi pulse ───────────────────────────────────────
   Widget _buildMicButton(bool isListening, ResponsiveHelper r) =>
       AnimatedBuilder(
         animation: _pulseAnimation,
@@ -741,7 +793,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                   height: r.size(80),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _micActive.withOpacity(0.15),
+                    color: _micActive.withOpacity(0.12),
                   ),
                 ),
               ),
@@ -752,7 +804,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                   height: r.size(80),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _micActive.withOpacity(0.25),
+                    color: _micActive.withOpacity(0.22),
                   ),
                 ),
               ),
@@ -765,14 +817,14 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     colors: isListening
-                        ? [_micActive, _micActive.withOpacity(0.75)]
-                        : [_micIdle, _micIdle.withOpacity(0.75)],
+                        ? [_micActive, _micActive.withOpacity(0.80)]
+                        : [_micIdle, _micIdle.withOpacity(0.80)],
                   ),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: (isListening ? _micActive : _micIdle)
-                          .withOpacity(0.5),
+                      color:
+                          (isListening ? _micActive : _micIdle).withOpacity(0.4),
                       blurRadius: isListening ? 28 : 14,
                       spreadRadius: isListening ? 4 : 0,
                     ),
@@ -780,7 +832,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                 ),
                 child: Icon(
                   isListening ? Icons.stop_rounded : Icons.mic_rounded,
-                  color: isListening ? Colors.white : _bgBottom,
+                  color: Colors.white,
                   size: r.size(44),
                 ),
               ),
@@ -789,9 +841,12 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
         ),
       );
 
-  // ── Status teks (mendengarkan / idle) ─────────────────────────────────────
+  // ── Status teks di bawah tombol mic ───────────────────────────────────────
   Widget _buildStatusText(bool isListening, ResponsiveHelper r) {
-    if (_showResult) return const SizedBox.shrink();
+    // Saat sudah ada hasil (dan tidak merekam): teks status tidak diperlukan
+    // karena kartu hasil sudah tampil di bawahnya
+    if (_showResult && !isListening) return const SizedBox.shrink();
+
     return isListening
         ? ValueListenableBuilder<String>(
             valueListenable: _sttService.recognizedTextNotifier,
@@ -804,7 +859,7 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                 fontSize: r.font(14),
                 color: _accent,
                 fontStyle: FontStyle.italic,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           )
@@ -813,16 +868,121 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
             textAlign: TextAlign.center,
             style: GoogleFonts.comicNeue(
               fontSize: r.font(13),
-              color: Colors.white,
+              color: _textPrimary.withOpacity(0.65),
               fontWeight: FontWeight.bold,
             ),
           );
   }
 
-  // ── Kartu hasil evaluasi (skor % + ringkasan kata) ────────────────────────
+  // ═════════════════════════════════════════════════════════════════════════
+  // RESULT CARD (v2: simpel + expandable detail)
+  // ═════════════════════════════════════════════════════════════════════════
+
   Widget _buildResultCard(ResponsiveHelper r) {
     final color = _scoreColor(_lastAccuracy);
 
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: double.infinity,
+      padding: EdgeInsets.all(r.spacing(16)),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withOpacity(0.35), width: 1.5),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Skor + emoji + pesan (primary info, selalu tampil)
+          Row(
+            children: [
+              Text(_scoreEmoji(_lastAccuracy),
+                  style: TextStyle(fontSize: r.font(32))),
+              SizedBox(width: r.spacing(12)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_lastAccuracy.toStringAsFixed(0)}%',
+                      style: GoogleFonts.comicNeue(
+                        fontSize: r.font(36),
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                        height: 1,
+                      ),
+                    ),
+                    SizedBox(height: r.spacing(2)),
+                    Text(
+                      _scoreMsg(_lastAccuracy),
+                      style: GoogleFonts.comicNeue(
+                        fontSize: r.font(12),
+                        color: color.withOpacity(0.85),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: r.spacing(12)),
+
+          // Tombol aksi: Coba Lagi + Lihat Detail
+          Row(
+            children: [
+              Expanded(
+                child: _ActionButton(
+                  icon: Icons.refresh_rounded,
+                  label: 'Coba Lagi',
+                  onTap: () {
+                    setState(() {
+                      _showResult = false;
+                      _showDetail = false;
+                    });
+                    _sttService.recognizedTextNotifier.value = '';
+                    _sttService.errorNotifier.value = '';
+                  },
+                  r: r,
+                  textColor: _textPrimary.withOpacity(0.7),
+                  borderColor: Colors.grey.shade300,
+                ),
+              ),
+              SizedBox(width: r.spacing(10)),
+              Expanded(
+                child: _ActionButton(
+                  icon: _showDetail
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.bar_chart_rounded,
+                  label: _showDetail ? 'Sembunyikan' : 'Lihat Detail',
+                  onTap: () => setState(() => _showDetail = !_showDetail),
+                  r: r,
+                  textColor: _showDetail ? color : _textPrimary.withOpacity(0.7),
+                  borderColor:
+                      _showDetail ? color.withOpacity(0.4) : Colors.grey.shade300,
+                  bgColor: _showDetail ? color.withOpacity(0.08) : null,
+                ),
+              ),
+            ],
+          ),
+
+          // Detail stat (collapse/expand animasi)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: _showDetail
+                ? Padding(
+                    padding: EdgeInsets.only(top: r.spacing(14)),
+                    child: _buildDetailStats(r),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailStats(ResponsiveHelper r) {
     int correct = 0, partial = 0, wrong = 0;
     for (final e in widget.lastEvaluationResult ?? []) {
       switch (e.status) {
@@ -839,230 +999,257 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
       }
     }
 
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(r.spacing(16)),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withOpacity(0.5), width: 1.5),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Skor besar
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_scoreEmoji(_lastAccuracy),
-                  style: TextStyle(fontSize: r.font(26))),
-              SizedBox(width: r.spacing(8)),
-              Text(
-                '${_lastAccuracy.toStringAsFixed(0)}%',
-                style: GoogleFonts.comicNeue(
-                  fontSize: r.font(34),
-                  fontWeight: FontWeight.w900,
-                  color: color,
-                  height: 1,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: r.spacing(4)),
-          Text(
-            _scoreMsg(_lastAccuracy),
-            style: GoogleFonts.comicNeue(
-              fontSize: r.font(12),
-              color: Colors.white60,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: r.spacing(12)),
-
-          // Legenda warna
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: r.spacing(12),
-            runSpacing: r.spacing(6),
-            children: [
-              _ColorLegend(
-                  color: _evalCorrect, label: '✅ Benar', r: r),
-              _ColorLegend(
-                  color: _evalPartial, label: '🟡 Kurang Tepat', r: r),
-              _ColorLegend(
-                  color: _evalWrong, label: '❌ Salah/Lewat', r: r),
-            ],
-          ),
-          SizedBox(height: r.spacing(10)),
-
-          // Ringkasan angka
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _StatChip(
-                  emoji: '✅', count: correct, label: 'Benar',
-                  color: _successColor, r: r),
-              Container(
-                  width: 1, height: 36,
-                  color: Colors.white.withOpacity(0.15)),
-              _StatChip(
-                  emoji: '🟡', count: partial, label: 'Kurang',
-                  color: _warningColor, r: r),
-              Container(
-                  width: 1, height: 36,
-                  color: Colors.white.withOpacity(0.15)),
-              _StatChip(
-                  emoji: '❌', count: wrong, label: 'Salah',
-                  color: Colors.redAccent, r: r),
-            ],
-          ),
-          SizedBox(height: r.spacing(12)),
-
-          // Tombol Coba Lagi
-          GestureDetector(
-            onTap: () {
-              setState(() => _showResult = false);
-              _sttService.recognizedTextNotifier.value = '';
-              _sttService.errorNotifier.value = '';
-            },
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                  horizontal: r.spacing(20), vertical: r.spacing(8)),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.refresh_rounded,
-                      color: Colors.white70, size: r.size(14)),
-                  SizedBox(width: r.spacing(5)),
-                  Text(
-                    'Coba Lagi',
-                    style: GoogleFonts.comicNeue(
-                      fontSize: r.font(12),
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        // Legenda warna
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: r.spacing(12),
+          runSpacing: r.spacing(6),
+          children: [
+            _ColorLegend(color: _evalCorrect, label: '✅ Benar', r: r),
+            _ColorLegend(color: _evalPartial, label: '🟡 Kurang Tepat', r: r),
+            _ColorLegend(color: _evalWrong,   label: '❌ Salah/Lewat', r: r),
+          ],
+        ),
+        SizedBox(height: r.spacing(12)),
+        // Stat chips
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _StatChip(
+                emoji: '✅', count: correct, label: 'Benar',
+                color: _successColor, r: r),
+            Container(width: 1, height: 36, color: Colors.grey.shade300),
+            _StatChip(
+                emoji: '🟡', count: partial, label: 'Kurang',
+                color: _warningColor, r: r),
+            Container(width: 1, height: 36, color: Colors.grey.shade300),
+            _StatChip(
+                emoji: '❌', count: wrong, label: 'Salah',
+                color: _evalWrong, r: r),
+          ],
+        ),
+      ],
     );
   }
 
-  // ── Footer: navigasi Prev/Next + tombol Selesai ───────────────────────────
-  Widget _buildFooter(ResponsiveHelper r) => Container(
-        padding: EdgeInsets.fromLTRB(
-          r.spacing(16), r.spacing(12), r.spacing(16), r.spacing(16)),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.25),
-          border: Border(
-              top: BorderSide(color: Colors.white.withOpacity(0.1))),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Navigasi: Prev | progress dots | Next
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _NavButton(
-                    icon: Icons.arrow_back_ios_rounded,
-                    label: 'Sebelumnya',
-                    enabled: widget.canGoPrev,
-                    onTap: widget.onPrev,
-                    r: r,
-                  ),
+  // ═════════════════════════════════════════════════════════════════════════
+  // FOOTER: navigasi + tombol selesai
+  // ═════════════════════════════════════════════════════════════════════════
 
-                  // Progress dots jika ≤ 10 kalimat
-                  if (widget.totalSentences > 1 &&
-                      widget.totalSentences <= 10)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: List.generate(
-                        widget.totalSentences,
-                        (i) => AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          margin:
-                              EdgeInsets.symmetric(horizontal: r.spacing(2)),
-                          width: i == widget.currentSentenceIndex
-                              ? r.size(14)
-                              : r.size(5),
-                          height: r.size(5),
-                          decoration: BoxDecoration(
-                            color: i == widget.currentSentenceIndex
-                                ? _accent
-                                : Colors.white.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+  Widget _buildFooter(ResponsiveHelper r) {
+    // Aktif jika sudah ada minimal 1 evaluasi (baik kalimat aktif maupun sebelumnya)
+    final bool canFinish =
+        widget.totalSentencesPracticed > 0 || _showResult;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          r.spacing(16), r.spacing(12), r.spacing(16), r.spacing(16)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Navigasi: Prev | progress indicator | Next
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _NavButton(
+                  icon: Icons.arrow_back_ios_rounded,
+                  label: 'Sebelumnya',
+                  enabled: widget.canGoPrev,
+                  onTap: widget.onPrev,
+                  r: r,
+                ),
+
+                if (widget.totalSentences > 1 && widget.totalSentences <= 10)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(
+                      widget.totalSentences,
+                      (i) => AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        margin: EdgeInsets.symmetric(horizontal: r.spacing(2)),
+                        width: i == widget.currentSentenceIndex
+                            ? r.size(14)
+                            : r.size(5),
+                        height: r.size(5),
+                        decoration: BoxDecoration(
+                          color: i == widget.currentSentenceIndex
+                              ? _accent
+                              : Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(4),
                         ),
                       ),
-                    )
-                  else
-                    Text(
-                      '${widget.currentSentenceIndex + 1} / ${widget.totalSentences}',
-                      style: GoogleFonts.comicNeue(
-                        fontSize: r.font(12),
-                        color: Colors.white60,
-                        fontWeight: FontWeight.bold,
-                      ),
                     ),
-
-                  _NavButton(
-                    icon: Icons.arrow_forward_ios_rounded,
-                    label: 'Berikutnya',
-                    enabled: widget.canGoNext,
-                    onTap: widget.onNext,
-                    r: r,
-                    isNext: true,
+                  )
+                else
+                  Text(
+                    '${widget.currentSentenceIndex + 1} / ${widget.totalSentences}',
+                    style: GoogleFonts.comicNeue(
+                      fontSize: r.font(12),
+                      color: _textPrimary.withOpacity(0.55),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ],
-              ),
 
-              SizedBox(height: r.spacing(12)),
+                _NavButton(
+                  icon: Icons.arrow_forward_ios_rounded,
+                  label: 'Berikutnya',
+                  enabled: widget.canGoNext,
+                  onTap: widget.onNext,
+                  r: r,
+                  isNext: true,
+                ),
+              ],
+            ),
 
-              // Tombol Selesai Latihan
-              GestureDetector(
-                onTap: widget.onFinishAll,
+            SizedBox(height: r.spacing(12)),
+
+            // Tombol Selesai — disabled secara visual & fungsional bila belum ada latihan
+            AnimatedOpacity(
+              opacity: canFinish ? 1.0 : 0.4,
+              duration: const Duration(milliseconds: 300),
+              child: GestureDetector(
+                onTap: canFinish ? widget.onFinishAll : null,
                 child: Container(
                   width: double.infinity,
-                  padding:
-                      EdgeInsets.symmetric(vertical: r.spacing(13)),
+                  padding: EdgeInsets.symmetric(vertical: r.spacing(13)),
                   decoration: BoxDecoration(
-                    color: _accent,
+                    color: canFinish ? _accent : Colors.grey.shade400,
                     borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _accent.withOpacity(0.35),
-                        blurRadius: 12,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+                    boxShadow: canFinish
+                        ? [
+                            BoxShadow(
+                              color: _accent.withOpacity(0.35),
+                              blurRadius: 12,
+                              offset: const Offset(0, 3),
+                            )
+                          ]
+                        : [],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.flag_rounded,
-                          color: _bgBottom, size: r.size(18)),
+                          color: Colors.white, size: r.size(18)),
                       SizedBox(width: r.spacing(7)),
-                      Text(
-                        'Selesai Latihan & Lihat Rekap',
-                        style: GoogleFonts.comicNeue(
-                          fontSize: r.font(14),
-                          fontWeight: FontWeight.w900,
-                          color: _bgBottom,
+                      Flexible(
+                        child: Text(
+                          canFinish
+                              ? 'Selesai Latihan & Lihat Rekap'
+                              : 'Latih minimal 1 kalimat dulu 😊',
+                          style: GoogleFonts.comicNeue(
+                            fontSize: r.font(14),
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ],
                   ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Widget pembantu
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Badge kecil yang tampil terpisah di atas area mic saat TTS memutar.
+class _TtsBadge extends StatelessWidget {
+  final ResponsiveHelper r;
+
+  const _TtsBadge({required this.r});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.symmetric(
+            horizontal: r.spacing(14), vertical: r.spacing(6)),
+        decoration: BoxDecoration(
+          color: Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.blue.shade200),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.volume_up_rounded,
+                color: Colors.blue.shade700, size: r.size(13)),
+            SizedBox(width: r.spacing(5)),
+            Text(
+              '🔊 Memutar kalimat...',
+              style: GoogleFonts.comicNeue(
+                fontSize: r.font(11),
+                fontWeight: FontWeight.w900,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+/// Tombol aksi generik (Coba Lagi / Lihat Detail).
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final ResponsiveHelper r;
+  final Color textColor;
+  final Color borderColor;
+  final Color? bgColor;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.r,
+    required this.textColor,
+    required this.borderColor,
+    this.bgColor,
+  });
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.symmetric(
+              horizontal: r.spacing(12), vertical: r.spacing(10)),
+          decoration: BoxDecoration(
+            color: bgColor ?? Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: textColor, size: r.size(14)),
+              SizedBox(width: r.spacing(5)),
+              Text(
+                label,
+                style: GoogleFonts.comicNeue(
+                  fontSize: r.font(12),
+                  fontWeight: FontWeight.w900,
+                  color: textColor,
                 ),
               ),
             ],
@@ -1070,10 +1257,6 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
         ),
       );
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Widget pembantu
-// ══════════════════════════════════════════════════════════════════════════════
 
 class _NavButton extends StatelessWidget {
   final IconData icon;
@@ -1083,7 +1266,8 @@ class _NavButton extends StatelessWidget {
   final ResponsiveHelper r;
   final bool isNext;
 
-  static const Color _accent = Color(0xFFFFD54F);
+  static const Color _accent      = Color(0xFFE65100);
+  static const Color _textPrimary = Color(0xFF1A237E);
 
   const _NavButton({
     required this.icon,
@@ -1103,13 +1287,13 @@ class _NavButton extends StatelessWidget {
               horizontal: r.spacing(12), vertical: r.spacing(8)),
           decoration: BoxDecoration(
             color: enabled
-                ? _accent.withOpacity(0.15)
-                : Colors.white.withOpacity(0.05),
+                ? _accent.withOpacity(0.08)
+                : Colors.grey.shade100,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: enabled
-                  ? _accent.withOpacity(0.4)
-                  : Colors.white.withOpacity(0.1),
+                  ? _accent.withOpacity(0.35)
+                  : Colors.grey.shade300,
             ),
           ),
           child: Row(
@@ -1118,7 +1302,7 @@ class _NavButton extends StatelessWidget {
               if (!isNext) ...[
                 Icon(icon,
                     size: r.size(12),
-                    color: enabled ? _accent : Colors.white24),
+                    color: enabled ? _accent : Colors.grey.shade400),
                 SizedBox(width: r.spacing(5)),
               ],
               Text(
@@ -1126,14 +1310,14 @@ class _NavButton extends StatelessWidget {
                 style: GoogleFonts.comicNeue(
                   fontSize: r.font(12),
                   fontWeight: FontWeight.w900,
-                  color: enabled ? _accent : Colors.white24,
+                  color: enabled ? _textPrimary : Colors.grey.shade400,
                 ),
               ),
               if (isNext) ...[
                 SizedBox(width: r.spacing(5)),
                 Icon(icon,
                     size: r.size(12),
-                    color: enabled ? _accent : Colors.white24),
+                    color: enabled ? _accent : Colors.grey.shade400),
               ],
             ],
           ),
@@ -1174,7 +1358,7 @@ class _StatChip extends StatelessWidget {
             label,
             style: GoogleFonts.comicNeue(
               fontSize: r.font(10),
-              color: Colors.white54,
+              color: Colors.grey.shade600,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -1207,7 +1391,7 @@ class _ColorLegend extends StatelessWidget {
             label,
             style: GoogleFonts.comicNeue(
               fontSize: r.font(10),
-              color: Colors.white60,
+              color: Colors.grey.shade700,
               fontWeight: FontWeight.bold,
             ),
           ),

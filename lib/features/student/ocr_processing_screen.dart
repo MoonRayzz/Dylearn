@@ -35,8 +35,9 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
   final AuthService _authService = AuthService();
   final StorageService _storageService = StorageService();
 
-  final ValueNotifier<String> _statusMessageNotifier =
-      ValueNotifier('Menganalisis kualitas teks...');
+  final ValueNotifier<String> _statusMessageNotifier = ValueNotifier(
+    'Menganalisis kualitas teks...',
+  );
   final ValueNotifier<double> _progressValueNotifier = ValueNotifier(0.0);
   bool _isProcessing = true;
 
@@ -79,105 +80,13 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
     _statusMessageNotifier.value = message;
   }
 
-  // ── Dialog rename buku — dipanggil SEBELUM loading spinner ─────────────────
-  // Font: ComicNeue (student-side theme)
+  // ── Dialog rename buku (Dipisah agar Lifecycle Aman) ──────────────────────
   Future<String?> _showBookTitleDialog(String suggestedTitle) async {
-    final ctrl = TextEditingController(text: suggestedTitle);
-    return showDialog<String>(
+    return await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(20)),
-        ),
-        title: Row(
-          children: [
-            Icon(Icons.drive_file_rename_outline_rounded,
-                color: Colors.orange.shade700, size: 22),
-            const SizedBox(width: 10),
-            Text(
-              'Beri Nama Cerita',
-              style: GoogleFonts.comicNeue(
-                  fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Kasih nama yang bagus biar ceritanya mudah ditemukan ya! 📖',
-              style: GoogleFonts.comicNeue(
-                  fontSize: 13, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              style: GoogleFonts.comicNeue(
-                  fontSize: 15, fontWeight: FontWeight.bold),
-              decoration: InputDecoration(
-                hintText: 'Contoh: Kisah Sang Kancil',
-                hintStyle: GoogleFonts.comicNeue(
-                    color: Colors.grey.shade400, fontSize: 14),
-                filled: true,
-                fillColor: Colors.orange.shade50,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      BorderSide(color: Colors.orange.shade400, width: 2),
-                ),
-                prefixIcon:
-                    Icon(Icons.auto_stories_rounded, color: Colors.orange.shade400),
-                suffixIcon: IconButton(
-                  icon:
-                      const Icon(Icons.clear_rounded, size: 18, color: Colors.grey),
-                  onPressed: () => ctrl.clear(),
-                ),
-              ),
-              onSubmitted: (_) {
-                final val = ctrl.text.trim();
-                Navigator.pop(ctx, val.isEmpty ? suggestedTitle : val);
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, suggestedTitle),
-            child: Text('Lewati',
-                style: GoogleFonts.comicNeue(
-                    color: Colors.grey.shade500, fontSize: 14)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange.shade600,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            ),
-            onPressed: () {
-              final val = ctrl.text.trim();
-              Navigator.pop(ctx, val.isEmpty ? suggestedTitle : val);
-            },
-            child: Text('Simpan Nama',
-                style: GoogleFonts.comicNeue(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Colors.white)),
-          ),
-        ],
-      ),
-    ).then((result) {
-      ctrl.dispose();
-      return result;
-    });
+      builder: (ctx) => _BookTitleDialog(suggestedTitle: suggestedTitle),
+    );
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -205,10 +114,8 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
 
         final File image = widget.imageFiles[i];
 
-        final Future<String?> uploadFuture =
-            _storageService.uploadImage(image, user.uid);
-        final Future<OcrResult> ocrFuture =
-            OcrService.convertImageToText(image);
+        final Future<String?> uploadFuture = _storageService.uploadImage(image, user.uid);
+        final Future<OcrResult> ocrFuture = OcrService.convertImageToText(image);
 
         final results = await Future.wait([uploadFuture, ocrFuture]);
 
@@ -222,9 +129,7 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
         final String pageText = ocrResult.parsedData.fullRawText;
 
         if (pageText.trim().isNotEmpty) {
-          if (combinedText.isNotEmpty) {
-            combinedText.write('\n<PAGE_BREAK>\n');
-          }
+          if (combinedText.isNotEmpty) combinedText.write('\n<PAGE_BREAK>\n');
           combinedText.write(pageText);
           totalConfidence += ocrResult.averageConfidence;
           processedCount++;
@@ -242,10 +147,8 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
       }
 
       if (mounted) {
-        setState(() {
-          _progressValueNotifier.value = 1.0;
-          _isProcessing = false;
-        });
+        _progressValueNotifier.value = 1.0;
+        setState(() => _isProcessing = false);
 
         _showResultDialog(
           score: confidencePercent,
@@ -309,8 +212,7 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
                     ? 'Cerita berhasil diproses dan siap dibaca.'
                     : 'Maaf, tulisan di foto tidak terlihat jelas.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: r.font(16), fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: r.font(16), fontWeight: FontWeight.bold),
               ),
               SizedBox(height: r.spacing(10)),
               Text(
@@ -327,7 +229,8 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.pop(dialogContext);
-                  Navigator.pushReplacement(context,
+                  Navigator.pushReplacement(
+                      context,
                       MaterialPageRoute(builder: (_) => const CameraPickerScreen()));
                 },
                 child: Text('Scan Ulang',
@@ -336,15 +239,16 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
             ElevatedButton(
               style: isGoodQuality
                   ? _successButtonStyle.copyWith(
-                      backgroundColor: WidgetStatePropertyAll(
-                          Theme.of(context).primaryColor))
+                      backgroundColor:
+                          WidgetStatePropertyAll(Theme.of(context).primaryColor))
                   : _retryButtonStyle,
               onPressed: () async {
                 Navigator.pop(dialogContext);
                 if (isGoodQuality) {
                   await _saveAndNavigate(userId, fullText, rawConfidence, imageUrls);
                 } else {
-                  Navigator.pushReplacement(context,
+                  Navigator.pushReplacement(
+                      context,
                       MaterialPageRoute(builder: (_) => const CameraPickerScreen()));
                 }
               },
@@ -399,10 +303,7 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
     );
   }
 
-  // ── PATCH: _saveAndNavigate ───────────────────────────────────────────────
-  // Perubahan: tanya nama buku dulu SEBELUM menampilkan loading spinner,
-  // lalu gunakan nama tersebut saat save ke Firestore.
-  // Semua logic Firestore dan Navigator lainnya tidak berubah.
+  // ── _saveAndNavigate ──────────────────────────────────────────────────────
   Future<void> _saveAndNavigate(
     String userId,
     String fullText,
@@ -411,22 +312,22 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
   ) async {
     if (!mounted) return;
 
-    // ── 1. Siapkan suggestion dari tanggal (sama seperti semula) ──────────
+    final nav = Navigator.of(context);
+
     final DateTime now = DateTime.now();
     final String defaultTitle = 'Cerita Bergambar ${now.day}/${now.month}';
 
-    // ── 2. Tampilkan dialog rename SEBELUM loading spinner ────────────────
+    // 1. Tampilkan dialog rename SEBELUM loading spinner
     final String? userTitle = await _showBookTitleDialog(defaultTitle);
+
     if (!mounted) return;
 
-    final String finalTitle =
-        (userTitle != null && userTitle.trim().isNotEmpty)
-            ? userTitle.trim()
-            : defaultTitle;
-    // ─────────────────────────────────────────────────────────────────────
+    final String finalTitle = (userTitle != null && userTitle.trim().isNotEmpty)
+        ? userTitle.trim()
+        : defaultTitle;
 
     try {
-      // ── 3. Baru tampilkan loading spinner ─────────────────────────────
+      // 2. Tampilkan loading spinner
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -442,42 +343,39 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
           .doc(targetUid)
           .collection('my_library')
           .add({
-        'timestamp':         FieldValue.serverTimestamp(),
-        'fileType':          'camera',
-        'ocrText':           fullText,
-        'ocrConfidence':     confidence,
-        'pageCount':         widget.imageFiles.length,
-        'imageUrls':         imageUrls,
-        'imageUrl':          imageUrls.isNotEmpty ? imageUrls.first : '',
-        'status':            'Belum Dibaca',
+        'timestamp': FieldValue.serverTimestamp(),
+        'fileType': 'camera',
+        'ocrText': fullText,
+        'ocrConfidence': confidence,
+        'pageCount': widget.imageFiles.length,
+        'imageUrls': imageUrls,
+        'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : '',
+        'status': 'Belum Dibaca',
         'durationInSeconds': 0,
-        'title':             finalTitle,  // ← pakai judul dari input user
-        'isFinished':        false,
+        'title': finalTitle,
+        'isFinished': false,
         'lastSentenceIndex': 0,
-        'totalSentences':    0,
-        'lastAccessed':      FieldValue.serverTimestamp(),
-        'createdBy':         userId,
+        'totalSentences': 0,
+        'lastAccessed': FieldValue.serverTimestamp(),
+        'createdBy': userId,
       });
 
-      if (mounted) {
-        Navigator.pop(context); // tutup loading spinner
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ReadScreen(
-              text: fullText,
-              documentId: docRef.id,
-              imageUrls: imageUrls,
-              activeStudentUid: widget.activeStudentUid,
-            ),
+      if (!mounted) return;
+      nav.pop(); // tutup loading spinner
+      nav.pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => ReadScreen(
+            text: fullText,
+            documentId: docRef.id,
+            imageUrls: imageUrls,
+            activeStudentUid: widget.activeStudentUid,
           ),
-        );
-      }
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        Navigator.pop(context);
-        _showErrorDialog('Gagal menyimpan cerita: $e');
-      }
+      if (!mounted) return;
+      nav.pop();
+      _showErrorDialog('Gagal menyimpan cerita: $e');
     }
   }
 
@@ -494,58 +392,61 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
         centerTitle: true,
       ),
       body: Center(
-        child: Padding(
-          padding: EdgeInsets.all(r.spacing(32)),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(
-                height: r.size(250),
-                child: const RepaintBoundary(
-                  child: _SpeedLottie(
-                    path: 'assets/animations/SCANNER_PDF.json',
-                    fit: BoxFit.contain,
-                    speedMultiplier: 0.8,
-                    repeat: true,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.all(r.spacing(32)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: r.size(250),
+                  child: const RepaintBoundary(
+                    child: _SpeedLottie(
+                      path: 'assets/animations/SCANNER_PDF.json',
+                      fit: BoxFit.contain,
+                      speedMultiplier: 0.8,
+                      repeat: true,
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(height: r.spacing(24)),
-              ValueListenableBuilder<String>(
-                valueListenable: _statusMessageNotifier,
-                builder: (_, message, __) => Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: r.font(16), fontWeight: FontWeight.bold),
+                SizedBox(height: r.spacing(24)),
+                ValueListenableBuilder<String>(
+                  valueListenable: _statusMessageNotifier,
+                  builder: (_, message, __) => Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: r.font(16), fontWeight: FontWeight.bold),
+                  ),
                 ),
-              ),
-              SizedBox(height: r.spacing(20)),
-              ValueListenableBuilder<double>(
-                valueListenable: _progressValueNotifier,
-                builder: (_, progress, __) => Column(
-                  children: [
-                    ClipRRect(
-                      borderRadius: _progressClipRadius,
-                      child: LinearProgressIndicator(
-                        value: progress > 0 ? progress : null,
-                        minHeight: r.size(8),
-                        color: Colors.orange,
-                        backgroundColor: Colors.orange.shade100,
+                SizedBox(height: r.spacing(20)),
+                ValueListenableBuilder<double>(
+                  valueListenable: _progressValueNotifier,
+                  builder: (_, progress, __) => Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: _progressClipRadius,
+                        child: LinearProgressIndicator(
+                          value: progress > 0 ? progress : null,
+                          minHeight: r.size(8),
+                          color: Colors.orange,
+                          backgroundColor: Colors.orange.shade100,
+                        ),
                       ),
-                    ),
-                    SizedBox(height: r.spacing(10)),
-                    Text(
-                      '${(progress * 100).toInt()}%',
-                      style: TextStyle(
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.bold,
-                          fontSize: r.font(14)),
-                    ),
-                  ],
+                      SizedBox(height: r.spacing(10)),
+                      Text(
+                        '${(progress * 100).toInt()}%',
+                        style: TextStyle(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.bold,
+                            fontSize: r.font(14)),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -553,8 +454,121 @@ class _OcrProcessingScreenState extends State<OcrProcessingScreen> {
   }
 }
 
-// ── _SpeedLottie — tidak berubah ──────────────────────────────────────────────
+// ── Komponen _BookTitleDialog (Stateful untuk mencegah disposed error) ──────
+class _BookTitleDialog extends StatefulWidget {
+  final String suggestedTitle;
 
+  const _BookTitleDialog({required this.suggestedTitle});
+
+  @override
+  State<_BookTitleDialog> createState() => _BookTitleDialogState();
+}
+
+class _BookTitleDialogState extends State<_BookTitleDialog> {
+  late TextEditingController ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    ctrl = TextEditingController(text: widget.suggestedTitle);
+  }
+
+  @override
+  void dispose() {
+    // Controller kini di-dispose dengan aman saat animasi pop selesai
+    // dan widget ini resmi dihapus dari tree.
+    ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(20)),
+      ),
+      title: Row(
+        children: [
+          Icon(Icons.drive_file_rename_outline_rounded,
+              color: Colors.orange.shade700, size: 22),
+          const SizedBox(width: 10),
+          Text(
+            'Beri Nama Cerita',
+            style: GoogleFonts.comicNeue(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Kasih nama yang bagus biar ceritanya mudah ditemukan ya! 📖',
+            style: GoogleFonts.comicNeue(fontSize: 13, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            autofillHints: null,
+            scribbleEnabled: false,
+            keyboardType: TextInputType.text,
+            enableSuggestions: false,
+            enableIMEPersonalizedLearning: false,
+            style: GoogleFonts.comicNeue(fontSize: 15, fontWeight: FontWeight.bold),
+            decoration: InputDecoration(
+              hintText: 'Contoh: Kisah Sang Kancil 📚',
+              hintStyle: GoogleFonts.comicNeue(color: Colors.grey.shade400, fontSize: 14),
+              filled: true,
+              fillColor: Colors.orange.shade50,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.orange.shade400, width: 2),
+              ),
+              prefixIcon: Icon(Icons.auto_stories_rounded, color: Colors.orange.shade400),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.clear_rounded, size: 18, color: Colors.grey),
+                onPressed: () => ctrl.clear(),
+              ),
+            ),
+            onSubmitted: (_) {
+              final val = ctrl.text.trim();
+              Navigator.pop(context, val.isEmpty ? widget.suggestedTitle : val);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, widget.suggestedTitle),
+          child: Text('Lewati',
+              style: GoogleFonts.comicNeue(color: Colors.grey.shade500, fontSize: 14)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange.shade600,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          ),
+          onPressed: () {
+            final val = ctrl.text.trim();
+            Navigator.pop(context, val.isEmpty ? widget.suggestedTitle : val);
+          },
+          child: Text('Simpan Nama',
+              style: GoogleFonts.comicNeue(
+                  fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+        ),
+      ],
+    );
+  }
+}
+
+// ── _SpeedLottie ──────────────────────────────────────────────────────────────
 class _SpeedLottie extends StatefulWidget {
   final String path;
   final double? width;
@@ -564,6 +578,7 @@ class _SpeedLottie extends StatefulWidget {
   final double speedMultiplier;
 
   const _SpeedLottie({
+    super.key,
     required this.path,
     this.width,
     this.height,

@@ -90,13 +90,22 @@ class OcrImagePreprocessor {
       };
     }
 
-    // ── STEP 1: KOREKSI ORIENTASI EXIF [BARU] ──────────────────────
-    // Foto HP sering punya EXIF orientasi tapi piksel belum dirotasi.
-    // bakeOrientation() membaca EXIF → rotasi piksel → ML Kit baca benar.
+    // ── STEP 1: RESIZE & KOREKSI ORIENTASI EXIF [BARU] ─────────────
+    // Foto HP sangat besar (up to 12MP). Decode image = 50MB RAM per foto.
+    // Resize max 1500px akan memangkas RAM 10x Lipat dan mencegah Out-Of-Memory.
+    image = img.bakeOrientation(image);
     final int origW = image.width;
     final int origH = image.height;
-    image = img.bakeOrientation(image);
-    final bool wasRotated = (image.width != origW || image.height != origH);
+
+    if (image.width > 1500 || image.height > 1500) {
+      if (image.width > image.height) {
+        image = img.copyResize(image, width: 1500);
+      } else {
+        image = img.copyResize(image, height: 1500);
+      }
+    }
+    
+    final bool wasRotated = (origW != image.width || origH != image.height);
     // ────────────────────────────────────────────────────────────────
 
     final Map<String, dynamic> analysis = _analyzeImage(image);

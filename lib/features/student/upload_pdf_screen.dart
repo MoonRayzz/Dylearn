@@ -108,95 +108,13 @@ class _UploadPdfScreenState extends State<UploadPdfScreen> {
     }
   }
 
-  // ── Dialog rename buku — dipanggil sebelum proses upload dimulai ─────────
+  // ── Dialog rename buku — dipisah ke StatefulWidget agar Lifecycle Aman ──
   Future<String?> _showBookTitleDialog(String suggestedTitle) async {
-    final ctrl = TextEditingController(text: suggestedTitle);
     return showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.drive_file_rename_outline_rounded,
-                color: Colors.orange.shade700),
-            const SizedBox(width: 10),
-            Text(
-              'Beri Nama Buku',
-              style: GoogleFonts.comicNeue(
-                  fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Beri nama yang jelas agar mudah ditemukan nanti.',
-              style: GoogleFonts.comicNeue(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              style: GoogleFonts.comicNeue(
-                  fontSize: 15, fontWeight: FontWeight.bold),
-              decoration: InputDecoration(
-                hintText: 'Contoh: Dongeng Kancil',
-                hintStyle: GoogleFonts.comicNeue(color: Colors.grey.shade400),
-                filled: true,
-                fillColor: Colors.orange.shade50,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                      color: Colors.orange.shade400, width: 2),
-                ),
-                prefixIcon: Icon(Icons.book_rounded,
-                    color: Colors.orange.shade400),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear_rounded, size: 18),
-                  onPressed: () => ctrl.clear(),
-                ),
-              ),
-              onSubmitted: (_) {
-                final val = ctrl.text.trim();
-                Navigator.pop(ctx, val.isEmpty ? suggestedTitle : val);
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, suggestedTitle),
-            child: Text('Lewati',
-                style: GoogleFonts.comicNeue(color: Colors.grey.shade600)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange.shade600,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () {
-              final val = ctrl.text.trim();
-              Navigator.pop(ctx, val.isEmpty ? suggestedTitle : val);
-            },
-            child: Text('Simpan',
-                style: GoogleFonts.comicNeue(
-                    fontWeight: FontWeight.bold, color: Colors.white)),
-          ),
-        ],
-      ),
-    ).then((result) {
-      ctrl.dispose();
-      return result;
-    });
+      builder: (ctx) => _BookTitleDialog(suggestedTitle: suggestedTitle),
+    );
   }
 
   Future<void> _navigateToPageSelectionAndProcess(
@@ -218,7 +136,6 @@ class _UploadPdfScreenState extends State<UploadPdfScreen> {
     if (selectedIndices != null && selectedIndices.isNotEmpty && mounted) {
       if (_targetUid.isEmpty) return;
 
-      // ── Tanya nama buku sebelum proses dimulai ─────────────────────────
       // Suggestion: nama file tanpa ekstensi, sudah di-clean
       final String suggested = fileName
           .replaceAll('.pdf', '')
@@ -237,7 +154,6 @@ class _UploadPdfScreenState extends State<UploadPdfScreen> {
               : suggested.isEmpty
                   ? 'Buku PDF'
                   : suggested;
-      // ───────────────────────────────────────────────────────────────────
 
       final uploadProvider =
           Provider.of<UploadProvider>(context, listen: false);
@@ -245,7 +161,7 @@ class _UploadPdfScreenState extends State<UploadPdfScreen> {
       final bookMetadata = {
         'fileName': fileName,
         'fileHash': fileHash,
-        'title': finalTitle,    // ← pakai judul dari input user
+        'title': finalTitle,
         'createdBy': _user?.uid ?? '',
       };
 
@@ -484,7 +400,115 @@ class _UploadPdfScreenState extends State<UploadPdfScreen> {
   }
 }
 
-// ── Komponen yang tidak berubah — copy langsung dari original ─────────────────
+// ── Komponen _BookTitleDialog (Stateful untuk mencegah disposed error) ──────
+class _BookTitleDialog extends StatefulWidget {
+  final String suggestedTitle;
+
+  const _BookTitleDialog({required this.suggestedTitle});
+
+  @override
+  State<_BookTitleDialog> createState() => _BookTitleDialogState();
+}
+
+class _BookTitleDialogState extends State<_BookTitleDialog> {
+  late TextEditingController ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    ctrl = TextEditingController(text: widget.suggestedTitle);
+  }
+
+  @override
+  void dispose() {
+    // Dipindah ke sini agar controller mati bersamaan dengan widget dialog yang hilang
+    ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Icon(Icons.drive_file_rename_outline_rounded, color: Colors.orange.shade700),
+          const SizedBox(width: 10),
+          Text(
+            'Beri Nama Buku',
+            style: GoogleFonts.comicNeue(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Beri nama yang jelas agar mudah ditemukan nanti.',
+            style: GoogleFonts.comicNeue(fontSize: 13, color: Colors.grey),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: ctrl,
+            autofocus: true,
+            // Properti keamanan dari OCR screen agar keyboard Realme/Oppo tidak rewel
+            textCapitalization: TextCapitalization.sentences,
+            autofillHints: null,
+            scribbleEnabled: false,
+            keyboardType: TextInputType.text,
+            enableSuggestions: false,
+            enableIMEPersonalizedLearning: false,
+            style: GoogleFonts.comicNeue(fontSize: 15, fontWeight: FontWeight.bold),
+            decoration: InputDecoration(
+              hintText: 'Contoh: Dongeng Kancil',
+              hintStyle: GoogleFonts.comicNeue(color: Colors.grey.shade400),
+              filled: true,
+              fillColor: Colors.orange.shade50,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.orange.shade400, width: 2),
+              ),
+              prefixIcon: Icon(Icons.book_rounded, color: Colors.orange.shade400),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.clear_rounded, size: 18),
+                onPressed: () => ctrl.clear(),
+              ),
+            ),
+            onSubmitted: (_) {
+              final val = ctrl.text.trim();
+              Navigator.pop(context, val.isEmpty ? widget.suggestedTitle : val);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, widget.suggestedTitle),
+          child: Text('Lewati', style: GoogleFonts.comicNeue(color: Colors.grey.shade600)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange.shade600,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: () {
+            final val = ctrl.text.trim();
+            Navigator.pop(context, val.isEmpty ? widget.suggestedTitle : val);
+          },
+          child: Text('Simpan',
+              style: GoogleFonts.comicNeue(fontWeight: FontWeight.bold, color: Colors.white)),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Komponen Area Upload dan List History — copy persis tidak ada yang diganti ─────────────────
 
 class PdfUploadAreaWidget extends StatelessWidget {
   final ValueNotifier<bool> isLoadingNotifier;

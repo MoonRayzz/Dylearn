@@ -1336,6 +1336,7 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
                         _evaluationResults[_currentSentenceIndex],
                     canGoPrev: _currentSentenceIndex > 0,
                     canGoNext: _currentSentenceIndex < _sentences.length - 1,
+                    totalSentencesPracticed: _evaluationResults.length,
                   );
                 },
               ),
