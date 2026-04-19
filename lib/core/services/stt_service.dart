@@ -1,3 +1,4 @@
+// stt_service.dart
 // ignore_for_file: deprecated_member_use
 
 import 'dart:async';
@@ -23,17 +24,23 @@ class SttService {
   // Sistem mengukur kecepatan baca anak (WPM) dari sesi-sesi sebelumnya
   // dan menyesuaikan pauseFor secara otomatis sebelum setiap listen().
   //
-  // Konversi WPM → pauseFor:
-  //   < 20 WPM  (sangat lambat, eja per huruf) → 5000ms
-  //   20–40 WPM (lambat)                       → 4000ms
-  //   40–80 WPM (normal)                       → 3000ms
-  //   > 80 WPM  (cepat/lancar)                 → 2500ms
+  // Konversi WPM → pauseFor (DIPERBARUI — toleransi lebih besar untuk murid
+  // yang terbata-bata atau membaca sangat lambat):
   //
-  // Sesi pertama: 4000ms (asumsi lambat, aman untuk semua anak).
+  //   < 10 WPM  (sangat lambat, eja per huruf, sering berhenti lama) → 9000ms
+  //   10–20 WPM (lambat sekali)                                      → 7000ms
+  //   20–40 WPM (lambat)                                             → 6000ms
+  //   40–80 WPM (normal)                                             → 4500ms
+  //   > 80 WPM  (cepat/lancar)                                       → 3500ms
+  //
+  // Sesi pertama: 7000ms (asumsi lambat, aman untuk semua anak disleksia).
+  // listenFor dinaikkan ke 120 detik agar murid yang sangat lambat
+  // tidak terpotong di tengah kalimat panjang.
+  //
   // Sistem belajar dari sesi berikutnya — rolling average 5 sesi terakhir.
 
   static const int    _historySize    = 5;
-  static const double _defaultPauseMs = 4000.0;
+  static const double _defaultPauseMs = 7000.0; // Dinaikkan dari 4000 → 7000
 
   final List<double> _wpmHistory = [];
   DateTime? _sessionStart;
@@ -88,7 +95,7 @@ class SttService {
         cancelOnError:  true,
         partialResults: true,
         listenMode:     stt.ListenMode.dictation,
-        listenFor:      const Duration(seconds: 60),
+        listenFor:      const Duration(seconds: 120), // Dinaikkan dari 60 → 120 detik
         pauseFor:       Duration(milliseconds: pauseMs),
       );
       if (!_isDisposed) isListeningNotifier.value = true;
@@ -139,12 +146,16 @@ class SttService {
 
   double _computePauseFor() {
     if (_wpmHistory.isEmpty) return _defaultPauseMs;
+
     final double avgWpm =
         _wpmHistory.reduce((a, b) => a + b) / _wpmHistory.length;
-    if (avgWpm < 20) return 5000;
-    if (avgWpm < 40) return 4000;
-    if (avgWpm < 80) return 3000;
-    return 2500;
+
+    // Threshold baru dengan nilai yang lebih toleran untuk murid lambat/terbata
+    if (avgWpm < 10) return 9000;  // Sangat lambat — eja per huruf
+    if (avgWpm < 20) return 7000;  // Lambat sekali
+    if (avgWpm < 40) return 6000;  // Lambat
+    if (avgWpm < 80) return 4500;  // Normal
+    return 3500;                    // Cepat/lancar
   }
 
   void _recordSessionWpm(String finalText) {
@@ -156,7 +167,7 @@ class SttService {
     final int wordCount = finalText.trim().isEmpty
         ? 0
         : finalText.trim().split(RegExp(r'\s+')).length;
-    if (wordCount < 2) return; // terlalu sedikit untuk estimasi akurat
+    if (wordCount < 2) return; // Terlalu sedikit untuk estimasi akurat
 
     final double wpm = (wordCount / durationSec) * 60.0;
     _wpmHistory.add(wpm);

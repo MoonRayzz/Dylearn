@@ -305,7 +305,7 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
       _flutterTts.setErrorHandler((msg) {
         if (mounted) _ttsStateNotifier.value = TtsState.stopped;
       });
-      await _flutterTts.awaitSpeakCompletion(true);
+      await _flutterTts.awaitSpeakCompletion(false);
       await _flutterTts.setLanguage("id-ID");
       if (mounted) setState(() => _isTtsReady = true);
     } catch (e) {
@@ -438,7 +438,7 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
   // MODE LATIHAN
   // ════════════════════════════════════════════════════════════════════════════
 
-  void _togglePracticeMode() {
+  Future<void> _togglePracticeMode() async {
     if (_ttsStateNotifier.value == TtsState.playing) {
       _flutterTts.stop();
       _ttsStateNotifier.value = TtsState.stopped;
@@ -465,13 +465,13 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
         _scrollToActiveSentence(isInitialLoad: true);
       });
     } else {
-      _savePracticeProgress();
+      await _savePracticeProgress();
     }
-    
+
     _isPracticeModeNotifier.value = entering;
   }
 
-  void _practiceNext() {
+  Future<void> _practiceNext() async {
     if (_currentSentenceIndex < _sentences.length - 1) {
       setState(() {
         _currentSentenceIndex++;
@@ -482,11 +482,11 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _scrollToActiveSentence(isInitialLoad: false),
       );
-      _savePracticeProgress();
+      await _savePracticeProgress();
     }
   }
 
-  void _practicePrev() {
+  Future<void> _practicePrev() async {
     if (_currentSentenceIndex > 0) {
       setState(() {
         _currentSentenceIndex--;
@@ -497,12 +497,13 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _scrollToActiveSentence(isInitialLoad: false),
       );
-      _savePracticeProgress();
+      await _savePracticeProgress();
     }
   }
 
-  void _handlePracticeResult(String recognizedText) {
-    if (_sentences.isEmpty || recognizedText.isEmpty) return;
+  Future<void> _handlePracticeResult(String recognizedText) async {
+    if (_sentences.isEmpty || recognizedText.isEmpty ||
+        _currentSentenceIndex >= _sentences.length) return;
     final originalText = _sentences[_currentSentenceIndex];
     final evaluations =
         ReadingEvaluator.evaluateReading(originalText, recognizedText);
@@ -513,16 +514,16 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
     });
     _hasReadSomething = true;
 
-    _saveSingleSessionToFirestore(
+    await _saveSingleSessionToFirestore(
       sentenceIndex: _currentSentenceIndex,
       originalText: originalText,
       spokenText: recognizedText,
       evaluations: evaluations,
     );
-    _savePracticeProgress();
+    await _savePracticeProgress();
   }
 
-  void _handleFinishAll() {
+  Future<void> _handleFinishAll() async {
     if (_evaluationResults.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
@@ -539,7 +540,8 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
         ? DateTime.now().difference(_practiceStartTime!).inSeconds
         : 0;
     final Map<int, String> sentenceTexts = {
-      for (final idx in _evaluationResults.keys) idx: _sentences[idx]
+      for (final idx in _evaluationResults.keys)
+        if (idx < _sentences.length) idx: _sentences[idx]
     };
     final summary = PracticeSummary.compute(
       userId: _targetUid, // MENGGUNAKAN TARGET UID
@@ -551,8 +553,8 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
       totalDurationSeconds: durationSecs,
     );
     
-    _saveSummaryToFirestore(summary);
-    _savePracticeCompletedFlag(summary.avgAccuracy);
+    await _saveSummaryToFirestore(summary);
+    await _savePracticeCompletedFlag(summary.avgAccuracy);
     
     _isPracticeModeNotifier.value = false;
     _showPracticeSummaryDialog(summary);

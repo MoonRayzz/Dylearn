@@ -30,7 +30,7 @@ import '../../core/utils/text_utils.dart';
 
 class PracticeMicPanel extends StatefulWidget {
   /// Callback saat anak selesai merekam 1 kalimat
-  final Function(String recognizedText) onPracticeDone;
+  final Future<void> Function(String recognizedText) onPracticeDone;
 
   /// Callback saat panel ditutup (kembali ke tab Dengarkan)
   final VoidCallback onCancel;
@@ -205,10 +205,10 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
         ..stop()
         ..reset();
       // Fix race condition: tunggu microtask agar recognizedText sudah final
-      Future.microtask(() {
+      Future.microtask(() async {
         if (!mounted) return;
         final text = _sttService.recognizedTextNotifier.value.trim();
-        if (text.isNotEmpty) widget.onPracticeDone(text);
+        if (text.isNotEmpty) await widget.onPracticeDone(text);
       });
     }
   }
