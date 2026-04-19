@@ -66,7 +66,6 @@ class _GuruHomeScreenState extends State<GuruHomeScreen> {
         if (change.type == DocumentChangeType.added) {
           final title = change.doc.data()?['title'] ?? 'Buku Anda';
           _notif.showBookStatusNotification(title, true);
-          break;
         }
       }
     });

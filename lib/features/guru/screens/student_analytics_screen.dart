@@ -360,8 +360,9 @@ class _StudentAnalyticsScreenState extends State<StudentAnalyticsScreen> {
       Uint8List? chartImageBytes;
       try {
         if (_chartKey.currentContext != null) {
-          RenderRepaintBoundary boundary =
-              _chartKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+          final renderObject = _chartKey.currentContext!.findRenderObject();
+          if (renderObject is! RenderRepaintBoundary) throw Exception('Chart render object bukan RepaintBoundary');
+          final RenderRepaintBoundary boundary = renderObject;
           ui.Image image = await boundary.toImage(pixelRatio: 3.0);
           ByteData? byteData =
               await image.toByteData(format: ui.ImageByteFormat.png);

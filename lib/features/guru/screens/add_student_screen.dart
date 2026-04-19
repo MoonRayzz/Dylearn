@@ -27,7 +27,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   final ValueNotifier<bool> _isLoadingNotifier = ValueNotifier<bool>(false);
 
-  static const List<String> _gradeOptions   = ['SD 1','SD 2','SD 3','SD 4','SD 5','SD 6'];
+  static const List<String> _gradeOptions = [
+    'SD 1', 'SD 2', 'SD 3', 'SD 4', 'SD 5', 'SD 6',
+    'SMP 1', 'SMP 2', 'SMP 3',
+    'SMA 1', 'SMA 2', 'SMA 3',
+  ];
   static const List<String> _dyslexiaOptions = ['Belum Tahu','Ringan','Sedang','Berat'];
 
   @override

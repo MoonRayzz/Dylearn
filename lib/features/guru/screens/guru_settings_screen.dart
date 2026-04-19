@@ -428,6 +428,10 @@ class _GuruSettingsScreenState extends State<GuruSettingsScreen> {
                               errMsg = '';
                             });
                             try {
+                              if (_currentUser == null) {
+                                setModal(() => errMsg = 'Sesi tidak valid. Silakan login ulang.');
+                                return;
+                              }
                               final cred = EmailAuthProvider.credential(
                                 email: _currentUser!.email!,
                                 password: o,

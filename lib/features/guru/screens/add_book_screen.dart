@@ -104,7 +104,10 @@ class _AddBookScreenState extends State<AddBookScreen> {
         Navigator.pop(context);
       }
     } catch (_) {
-      if (mounted) setState(() { _isRoleChecking = false; _isRoleAuthorized = true; });
+      if (mounted) {
+        setState(() => _isRoleChecking = false);
+        Navigator.pop(context);
+      }
     }
   }
 

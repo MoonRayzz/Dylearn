@@ -5,7 +5,7 @@ class ChildProfile {
   final String name;
   final int age;
   final String gender; // 'L' atau 'P'
-  final String grade;  // 'SD 1', 'SD 2', dll
+  final String grade;  // 'SD 1'–'SD 6', 'SMP 1'–'SMP 3', 'SMA 1'–'SMA 3'
   final String dyslexiaType; // 'Ringan', 'Sedang', 'Berat', 'Belum Tahu'
   final bool isProfileComplete;
   

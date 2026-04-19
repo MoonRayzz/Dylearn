@@ -51,7 +51,7 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
   String _displayName  = "Pahlawan Cilik";
   String _age          = "";
   String _gender       = "Laki-laki";
-  String _grade        = "SD Kelas 1";
+  String _grade        = "SD 1";
   String _dyslexiaType = "Belum Tahu";
 
   // FIX CRASH: Guard mencegah multiple bottom sheet terbuka sekaligus
@@ -93,7 +93,7 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
           _displayName  = data['displayName'] ?? _displayName;
           _age          = data['age']?.toString()   ?? "";
           _gender       = data['gender']            ?? "Laki-laki";
-          _grade        = data['grade']             ?? "SD Kelas 1";
+          _grade        = data['grade']             ?? "SD 1";
           _dyslexiaType = data['dyslexiaType']      ?? "Belum Tahu";
         });
       }
@@ -142,9 +142,12 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
     final nameController = TextEditingController(text: _displayName);
     final ageController  = TextEditingController(text: _age);
     String tempGender   = ['Laki-laki','Perempuan'].contains(_gender) ? _gender : 'Laki-laki';
-    String tempGrade    = ['TK/PAUD','SD Kelas 1','SD Kelas 2','SD Kelas 3',
-                           'SD Kelas 4','SD Kelas 5','SD Kelas 6','Lainnya']
-                          .contains(_grade) ? _grade : 'SD Kelas 1';
+    const gradeList = [
+      'SD 1', 'SD 2', 'SD 3', 'SD 4', 'SD 5', 'SD 6',
+      'SMP 1', 'SMP 2', 'SMP 3',
+      'SMA 1', 'SMA 2', 'SMA 3',
+    ];
+    String tempGrade = gradeList.contains(_grade) ? _grade : 'SD 1';
     String tempDyslexia = _dyslexiaDisplayLabels.containsKey(_dyslexiaType)
                           ? _dyslexiaType : 'Belum Tahu';
     bool   isLoading    = false;
@@ -292,8 +295,7 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
                         decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.school_rounded, color: _heroStart),
                             border: oBorder, enabledBorder: oBorder, focusedBorder: fBorder),
-                        items: ['TK/PAUD','SD Kelas 1','SD Kelas 2','SD Kelas 3',
-                                'SD Kelas 4','SD Kelas 5','SD Kelas 6','Lainnya']
+                        items: gradeList
                             .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                         onChanged: (v) => setModal(() => tempGrade = v!)),
                     SizedBox(height: r.spacing(14)),
