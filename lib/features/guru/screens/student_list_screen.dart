@@ -420,7 +420,7 @@ class _StudentListScreenState extends State<StudentListScreen> {
                       ),
                       sliver: SliverList.separated(
                         itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, i) {
                           final data =
                               filtered[i].data() as Map<String, dynamic>;
@@ -750,7 +750,7 @@ class _StudentCard extends StatelessWidget {
                                 width: 44,
                                 height: 44,
                                 fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) =>
+                                errorWidget: (_, _, _) =>
                                     _InitialText(name: name, fontSize: 16),
                               ),
                             )

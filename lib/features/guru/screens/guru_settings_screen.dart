@@ -433,7 +433,7 @@ class _GuruSettingsScreenState extends State<GuruSettingsScreen> {
                                 return;
                               }
                               final cred = EmailAuthProvider.credential(
-                                email: _currentUser!.email!,
+                                email: _currentUser.email!,
                                 password: o,
                               );
                               await _currentUser.reauthenticateWithCredential(

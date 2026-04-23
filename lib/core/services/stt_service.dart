@@ -1,4 +1,5 @@
 // stt_service.dart
+
 // ignore_for_file: deprecated_member_use
 
 import 'dart:async';
@@ -14,33 +15,19 @@ class SttService {
 
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isInitialized = false;
-  bool _isDisposed    = false;
 
+  // ── ValueNotifier TIDAK PERNAH di-dispose pada singleton ──────────────────
+  // Singleton hidup selama app berjalan. Memanggil .dispose() pada ValueNotifier
+  // di singleton menyebabkan FlutterError di sesi berikutnya karena instance
+  // yang sama masih dipakai. Gunakan resetSession() untuk membersihkan state
+  // antar sesi tanpa merusak notifier.
   final ValueNotifier<bool>   isListeningNotifier    = ValueNotifier<bool>(false);
   final ValueNotifier<String> recognizedTextNotifier = ValueNotifier<String>('');
   final ValueNotifier<String> errorNotifier          = ValueNotifier<String>('');
 
   // ── Adaptive pauseFor ─────────────────────────────────────────────────────
-  // Sistem mengukur kecepatan baca anak (WPM) dari sesi-sesi sebelumnya
-  // dan menyesuaikan pauseFor secara otomatis sebelum setiap listen().
-  //
-  // Konversi WPM → pauseFor (DIPERBARUI — toleransi lebih besar untuk murid
-  // yang terbata-bata atau membaca sangat lambat):
-  //
-  //   < 10 WPM  (sangat lambat, eja per huruf, sering berhenti lama) → 9000ms
-  //   10–20 WPM (lambat sekali)                                      → 7000ms
-  //   20–40 WPM (lambat)                                             → 6000ms
-  //   40–80 WPM (normal)                                             → 4500ms
-  //   > 80 WPM  (cepat/lancar)                                       → 3500ms
-  //
-  // Sesi pertama: 7000ms (asumsi lambat, aman untuk semua anak disleksia).
-  // listenFor dinaikkan ke 120 detik agar murid yang sangat lambat
-  // tidak terpotong di tengah kalimat panjang.
-  //
-  // Sistem belajar dari sesi berikutnya — rolling average 5 sesi terakhir.
-
   static const int    _historySize    = 5;
-  static const double _defaultPauseMs = 7000.0; // Dinaikkan dari 4000 → 7000
+  static const double _defaultPauseMs = 7000.0;
 
   final List<double> _wpmHistory = [];
   DateTime? _sessionStart;
@@ -64,7 +51,7 @@ class SttService {
       return _isInitialized;
     } catch (e) {
       debugPrint('Gagal inisialisasi STT: $e');
-      if (!_isDisposed) errorNotifier.value = 'Mikrofon tidak dapat diakses.';
+      errorNotifier.value = 'Mikrofon tidak dapat diakses.';
       return false;
     }
   }
@@ -80,10 +67,8 @@ class SttService {
     _sessionStart   = DateTime.now();
     _doneTimer?.cancel();
 
-    if (!_isDisposed) {
-      recognizedTextNotifier.value = '';
-      errorNotifier.value          = '';
-    }
+    recognizedTextNotifier.value = '';
+    errorNotifier.value          = '';
 
     final int pauseMs = _computePauseFor().round();
     debugPrint('STT pauseFor: ${pauseMs}ms | WPM history: $_wpmHistory');
@@ -95,16 +80,14 @@ class SttService {
         cancelOnError:  true,
         partialResults: true,
         listenMode:     stt.ListenMode.dictation,
-        listenFor:      const Duration(seconds: 120), // Dinaikkan dari 60 → 120 detik
+        listenFor:      const Duration(seconds: 120),
         pauseFor:       Duration(milliseconds: pauseMs),
       );
-      if (!_isDisposed) isListeningNotifier.value = true;
+      isListeningNotifier.value = true;
     } catch (e) {
       debugPrint('Error saat mulai mendengarkan: $e');
-      if (!_isDisposed) {
-        errorNotifier.value       = 'Gagal memulai perekaman suara.';
-        isListeningNotifier.value = false;
-      }
+      errorNotifier.value       = 'Gagal memulai perekaman suara.';
+      isListeningNotifier.value = false;
     }
   }
 
@@ -114,7 +97,7 @@ class SttService {
     await _speechToText.stop();
     _doneTimer?.cancel();
     _doneTimer = Timer(const Duration(milliseconds: 700), () {
-      if (!_isDisposed && isListeningNotifier.value) {
+      if (isListeningNotifier.value) {
         isListeningNotifier.value = false;
       }
     });
@@ -123,21 +106,35 @@ class SttService {
   Future<void> cancelListening() async {
     _doneTimer?.cancel();
     await _speechToText.cancel();
-    if (!_isDisposed) {
-      isListeningNotifier.value    = false;
-      recognizedTextNotifier.value = '';
-    }
+    isListeningNotifier.value    = false;
+    recognizedTextNotifier.value = '';
   }
 
-  void dispose() {
-    if (_isDisposed) return;
-    _isDisposed    = true;
-    _isInitialized = false;
+  /// Bersihkan state antar sesi tanpa merusak ValueNotifier.
+  /// Dipanggil oleh widget saat di-unmount, bukan dispose().
+  void resetSession() {
+    _doneTimer?.cancel();
+    _hasFinalResult = false;
+    _sessionStart   = null;
+    if (isListeningNotifier.value) {
+      _speechToText.cancel();
+      isListeningNotifier.value = false;
+    }
+    recognizedTextNotifier.value = '';
+    errorNotifier.value          = '';
+    // _isInitialized TIDAK di-reset: koneksi mikrofon tetap valid
+    // _wpmHistory TIDAK di-reset: data adaptif tetap berguna lintas sesi
+  }
+
+  /// Hanya dipanggil saat app benar-benar ditutup (AppLifecycleState.detached).
+  /// JANGAN panggil dari widget dispose() — singleton akan rusak.
+  void disposeForAppExit() {
     _doneTimer?.cancel();
     _speechToText.cancel();
-    isListeningNotifier.dispose();
-    recognizedTextNotifier.dispose();
-    errorNotifier.dispose();
+    _isInitialized = false;
+    // ValueNotifier TIDAK di-dispose di sini karena singleton mungkin
+    // masih diakses oleh widget lain yang sedang teardown bersamaan.
+    // OS akan membersihkan memori saat app benar-benar ditutup.
   }
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -146,16 +143,13 @@ class SttService {
 
   double _computePauseFor() {
     if (_wpmHistory.isEmpty) return _defaultPauseMs;
-
     final double avgWpm =
         _wpmHistory.reduce((a, b) => a + b) / _wpmHistory.length;
-
-    // Threshold baru dengan nilai yang lebih toleran untuk murid lambat/terbata
-    if (avgWpm < 10) return 9000;  // Sangat lambat — eja per huruf
-    if (avgWpm < 20) return 7000;  // Lambat sekali
-    if (avgWpm < 40) return 6000;  // Lambat
-    if (avgWpm < 80) return 4500;  // Normal
-    return 3500;                    // Cepat/lancar
+    if (avgWpm < 10) return 9000;
+    if (avgWpm < 20) return 7000;
+    if (avgWpm < 40) return 6000;
+    if (avgWpm < 80) return 4500;
+    return 3500;
   }
 
   void _recordSessionWpm(String finalText) {
@@ -163,12 +157,10 @@ class SttService {
     final double durationSec =
         DateTime.now().difference(_sessionStart!).inMilliseconds / 1000.0;
     if (durationSec < 1.0) return;
-
     final int wordCount = finalText.trim().isEmpty
         ? 0
         : finalText.trim().split(RegExp(r'\s+')).length;
-    if (wordCount < 2) return; // Terlalu sedikit untuk estimasi akurat
-
+    if (wordCount < 2) return;
     final double wpm = (wordCount / durationSec) * 60.0;
     _wpmHistory.add(wpm);
     if (_wpmHistory.length > _historySize) _wpmHistory.removeAt(0);
@@ -180,20 +172,16 @@ class SttService {
   // ════════════════════════════════════════════════════════════════════════════
 
   void _onSpeechResult(SpeechRecognitionResult result) {
-    if (_isDisposed) return;
     recognizedTextNotifier.value = result.recognizedWords;
     if (result.finalResult) {
       _hasFinalResult = true;
       _doneTimer?.cancel();
       _recordSessionWpm(result.recognizedWords);
-      Future.microtask(() {
-        if (!_isDisposed) isListeningNotifier.value = false;
-      });
+      Future.microtask(() => isListeningNotifier.value = false);
     }
   }
 
   void _onStatus(String status) {
-    if (_isDisposed) return;
     if (status == 'listening') {
       isListeningNotifier.value = true;
       return;
@@ -202,13 +190,12 @@ class SttService {
       if (_hasFinalResult) return;
       _doneTimer?.cancel();
       _doneTimer = Timer(const Duration(milliseconds: 400), () {
-        if (!_isDisposed) isListeningNotifier.value = false;
+        isListeningNotifier.value = false;
       });
     }
   }
 
   void _onError(SpeechRecognitionError error) {
-    if (_isDisposed) return;
     isListeningNotifier.value = false;
     if (error.errorMsg == 'error_speech_timeout' ||
         error.errorMsg == 'error_no_match') {

@@ -81,7 +81,8 @@ class AuthService {
       final result = await _auth.signInWithEmailAndPassword(
           email: email, password: password);
       if (result.user != null) {
-        _firestore.collection('users').doc(result.user!.uid).set(
+        await _saveUserToFirestore(result.user!, 'email');
+        await _firestore.collection('users').doc(result.user!.uid).set(
             {'lastLogin': FieldValue.serverTimestamp()},
             SetOptions(merge: true));
       }
@@ -102,6 +103,9 @@ class AuthService {
       if (userCredential.user != null) {
         await _saveUserToFirestore(userCredential.user!, 'google.com',
             isFinalized: true);
+        await _firestore.collection('users').doc(userCredential.user!.uid).set(
+            {'lastLogin': FieldValue.serverTimestamp()},
+            SetOptions(merge: true));
       }
       return userCredential.user;
     } on FirebaseAuthException catch (e) {
@@ -119,10 +123,13 @@ class AuthService {
       {String? customName, bool isFinalized = false}) async {
     final userRef = _firestore.collection('users').doc(user.uid);
     final doc     = await userRef.get();
-    if (!doc.exists) {
+    final data    = doc.data();
+
+    // Jika document belum ada, atau hanya ada field 'lastLogin' (tidak ada 'role' dll), kita isi field wajibnya
+    if (!doc.exists || (data != null && !data.containsKey('role'))) {
       await userRef.set({
         'uid':               user.uid,
-        'email':             user.email,
+        'email':             user.email ?? '',
         'displayName':       customName ?? user.displayName ?? 'User',
         'photoUrl':          user.photoURL ?? '',
         'createdAt':         FieldValue.serverTimestamp(),
@@ -137,7 +144,7 @@ class AuthService {
         'gender':            '',
         'grade':             '',
         'dyslexiaType':      '',
-      });
+      }, SetOptions(merge: true));
     }
   }
 

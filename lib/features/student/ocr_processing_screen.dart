@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously, unused_field, unused_element_parameter, unnecessary_underscores
+// ignore_for_file: use_build_context_synchronously, unused_field, unused_element_parameter, unnecessary_underscores, deprecated_member_use
 
 import 'dart:io';
 import 'package:flutter/material.dart';
