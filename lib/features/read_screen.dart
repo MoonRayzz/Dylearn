@@ -1069,6 +1069,18 @@ class _ReadScreenState extends State<ReadScreen> with WidgetsBindingObserver {
                   onChanged: (val) => settings.toggleRuler(val),
                   activeColor: Colors.orange,
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text("Feedback Suara Otomatis",
+                      style: TextStyle(
+                          fontFamily: settings.fontFamily,
+                          fontWeight: FontWeight.bold)),
+                  subtitle: const Text(
+                      "Bacakan kata salah & terlewat setelah latihan"),
+                  value: settings.enableFeedbackTts,
+                  onChanged: (val) => settings.toggleFeedbackTts(val),
+                  activeColor: Colors.deepOrange,
+                ),
 
                 const Divider(height: 30),
 

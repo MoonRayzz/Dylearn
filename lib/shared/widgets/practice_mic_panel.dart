@@ -1,5 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -40,6 +42,13 @@ class _DetailStats {
     }
     return _DetailStats(c, p, w);
   }
+}
+
+// ── Model word chip untuk feedback panel ─────────────────────────────────────
+class _FeedbackWord {
+  final String word;
+  final WordStatus status;
+  const _FeedbackWord(this.word, this.status);
 }
 
 class PracticeMicPanel extends StatefulWidget {
@@ -83,6 +92,14 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
   final ValueNotifier<bool> _isTtsPlayingNotifier = ValueNotifier(false);
   final ValueNotifier<TextRange?> _ttsHighlightNotifier = ValueNotifier(null);
 
+  // Opsi A: Feedback word chip panel
+  // Notifier kata mana yang sedang dibaca TTS feedback (berdasarkan teks kata)
+  final ValueNotifier<String?> _feedbackHighlightWord = ValueNotifier(null);
+  // Flag: true saat TTS feedback aktif, false saat TTS kalimat biasa
+  bool _isFeedbackTtsActive = false;
+  // Daftar kata bermasalah yang ditampilkan di feedback panel
+  List<_FeedbackWord> _cachedFeedbackWords = [];
+
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
 
@@ -93,6 +110,9 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
   // FIX Isu 3: cache stats — dihitung SEKALI saat evaluasi berubah,
   // tidak diulang setiap setState() (animasi mic, toggle detail, dsb.)
   _DetailStats? _cachedStats;
+
+  // Timer untuk delay sebelum TTS feedback otomatis diputar
+  Timer? _feedbackTimer;
 
   // ── Tema warna ────────────────────────────────────────────────────────────
   static const Color _bgTop       = Color(0xFFFFF8E1);
@@ -131,16 +151,30 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
       if (mounted) {
         _isTtsPlayingNotifier.value = false;
         _ttsHighlightNotifier.value = null;
+        // Reset feedback chip highlight
+        _feedbackHighlightWord.value = null;
+        _isFeedbackTtsActive = false;
       }
     });
     _flutterTts.setErrorHandler((_) {
       if (mounted) {
         _isTtsPlayingNotifier.value = false;
         _ttsHighlightNotifier.value = null;
+        _feedbackHighlightWord.value = null;
+        _isFeedbackTtsActive = false;
       }
     });
     _flutterTts.setProgressHandler((text, start, end, word) {
-      if (mounted) _ttsHighlightNotifier.value = TextRange(start: start, end: end);
+      if (!mounted) return;
+      if (_isFeedbackTtsActive) {
+        // Mode feedback: highlight chip kata yang sedang dibaca
+        // Normalisasi kata (lowercase, trim) agar cocok dengan chip
+        final normalized = word.toLowerCase().trim();
+        _feedbackHighlightWord.value = normalized;
+      } else {
+        // Mode kalimat biasa: highlight karakter di teks kalimat
+        _ttsHighlightNotifier.value = TextRange(start: start, end: end);
+      }
     });
     _syncResult();
   }
@@ -149,9 +183,14 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
   void didUpdateWidget(PracticeMicPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.currentSentenceIndex != oldWidget.currentSentenceIndex) {
+      // Ganti kalimat: batalkan feedback yang sedang/akan diputar
+      _feedbackTimer?.cancel();
       _flutterTts.stop();
       _isTtsPlayingNotifier.value = false;
       _ttsHighlightNotifier.value = null;
+      _feedbackHighlightWord.value = null;
+      _isFeedbackTtsActive = false;
+      _cachedFeedbackWords = [];
       _sttService.recognizedTextNotifier.value = '';
       _sttService.errorNotifier.value = '';
       _showDetail = false;
@@ -168,19 +207,142 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
       _lastAccuracy = ReadingEvaluator.calculateOverallAccuracy(evals);
       // FIX Isu 3: hitung stats sekali di sini, bukan di _buildDetailStats
       _cachedStats = _DetailStats.from(evals);
+
+      // Bangun cache feedback words untuk panel chip
+      _cachedFeedbackWords = _buildFeedbackWordList(evals);
+
       if (mounted) setState(() => _showResult = true);
+
+      // Jadwalkan TTS feedback dengan delay 1.2 detik agar tidak mengagetkan
+      _feedbackTimer?.cancel();
+      _feedbackTimer = Timer(const Duration(milliseconds: 1200), () {
+        if (!mounted) return;
+        final settings = context.read<SettingsProvider>();
+        if (settings.enableFeedbackTts) {
+          _speakFeedback(evals, settings);
+        }
+      });
     } else {
       _cachedStats = null;
+      _cachedFeedbackWords = [];
+      _feedbackTimer?.cancel();
       if (mounted) setState(() => _showResult = false);
+    }
+  }
+
+  /// Bangun daftar kata bermasalah dari hasil evaluasi (urut sesuai posisi kalimat).
+  List<_FeedbackWord> _buildFeedbackWordList(List<WordEvaluation> evals) {
+    final result = <_FeedbackWord>[];
+    for (final e in evals) {
+      final word = e.originalWord.trim();
+      if (word.isEmpty) continue;
+      if (e.status == WordStatus.incorrect ||
+          e.status == WordStatus.partially_correct ||
+          e.status == WordStatus.missed) {
+        result.add(_FeedbackWord(word, e.status));
+      }
+    }
+    return result;
+  }
+
+  // ── TTS Feedback Otomatis ─────────────────────────────────────────────────
+
+  /// Membangun dan memutar kalimat feedback TTS setelah evaluasi.
+  /// Urutan: pujian → kata salah/kurang tepat → kata terlewat.
+  /// Highlight diarahkan ke chip panel — BUKAN ke kalimat utama.
+  Future<void> _speakFeedback(
+    List<WordEvaluation> evals,
+    SettingsProvider settings,
+  ) async {
+    // Jangan putar jika TTS sedang berjalan
+    if (_isTtsPlayingNotifier.value) return;
+
+    // Pisahkan kata bermasalah berdasarkan status
+    final wrongOrPartial = <String>[];
+    final missed = <String>[];
+
+    for (final e in evals) {
+      final word = e.originalWord.trim();
+      if (word.isEmpty) continue;
+      switch (e.status) {
+        case WordStatus.incorrect:
+        case WordStatus.partially_correct:
+          wrongOrPartial.add(word);
+          break;
+        case WordStatus.missed:
+          missed.add(word);
+          break;
+        case WordStatus.correct:
+          break;
+      }
+    }
+
+    // ── Bangun kalimat feedback ────────────────────────────────────────────
+    final buffer = StringBuffer();
+
+    // 1. Pujian berdasarkan akurasi (selalu disampaikan)
+    if (_lastAccuracy >= 90) {
+      buffer.write('Luar biasa! Bacaanmu hampir sempurna! ');
+    } else if (_lastAccuracy >= 75) {
+      buffer.write('Hebat! Kamu sudah membaca dengan baik! ');
+    } else if (_lastAccuracy >= 55) {
+      buffer.write('Bagus! Terus semangat berlatih! ');
+    } else if (_lastAccuracy >= 35) {
+      buffer.write('Jangan menyerah, kamu pasti bisa! ');
+    } else {
+      buffer.write('Coba dengarkan dulu, lalu baca lagi! ');
+    }
+
+    // 2. Kata salah / kurang tepat
+    if (wrongOrPartial.isNotEmpty) {
+      buffer.write('Perhatikan kata-kata ini ya: ');
+      buffer.write(wrongOrPartial.join(', '));
+      buffer.write('. ');
+    }
+
+    // 3. Kata terlewat
+    if (missed.isNotEmpty) {
+      if (missed.length == 1) {
+        buffer.write('Ada satu kata yang kamu lewati: ${missed[0]}. Coba ucapkan lagi ya!');
+      } else {
+        buffer.write('Ada kata yang kamu lewati: ');
+        buffer.write(missed.join(', '));
+        buffer.write('. Coba ucapkan lagi ya!');
+      }
+    }
+
+    final feedbackText = buffer.toString().trim();
+    if (feedbackText.isEmpty) return;
+
+    try {
+      await _flutterTts.setLanguage('id-ID');
+      // Feedback sedikit lebih lambat agar anak tidak ketinggalan
+      await _flutterTts.setSpeechRate(
+          (settings.ttsRate * 0.9).clamp(0.1, 1.0));
+      await _flutterTts.setPitch(settings.ttsPitch);
+      if (settings.selectedVoice != null) {
+        await _flutterTts.setVoice(settings.selectedVoice!);
+      }
+      // Aktifkan mode feedback — progress handler akan routing ke chip notifier
+      _isFeedbackTtsActive = true;
+      _isTtsPlayingNotifier.value = true;
+      await _flutterTts.speak(feedbackText);
+    } catch (_) {
+      if (mounted) {
+        _isTtsPlayingNotifier.value = false;
+        _isFeedbackTtsActive = false;
+      }
     }
   }
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     _pulseController.dispose();
     _flutterTts.stop();
     _isTtsPlayingNotifier.dispose();
     _ttsHighlightNotifier.dispose();
+    _feedbackHighlightWord.dispose();
     _sttService.isListeningNotifier.removeListener(_onListeningChanged);
 
     // FIX Isu 1: resetSession() — bersihkan state sesi tanpa merusak singleton.
@@ -211,6 +373,13 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
     if (_sttService.isListeningNotifier.value) {
       _sttService.stopListening();
     } else {
+      // User mulai rekam: batalkan semua TTS yang sedang berjalan
+      _feedbackTimer?.cancel();
+      _flutterTts.stop();
+      _isTtsPlayingNotifier.value = false;
+      _ttsHighlightNotifier.value = null;
+      _feedbackHighlightWord.value = null;
+      _isFeedbackTtsActive = false;
       _sttService.startListening();
     }
   }
@@ -292,7 +461,10 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                         builder: (context, isPlaying, _) => AnimatedSwitcher(
                           duration: const Duration(milliseconds: 250),
                           child: isPlaying
-                              ? _TtsBadge(r: r)
+                              ? _TtsBadge(
+                                  r: r,
+                                  isFeedbackMode: _isFeedbackTtsActive,
+                                )
                               : const SizedBox.shrink(),
                         ),
                       ),
@@ -310,6 +482,11 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
                             if (_showResult && !isListening) ...[
                               SizedBox(height: r.spacing(12)),
                               _buildResultCard(r),
+                              // Opsi A: Feedback word chip panel
+                              if (_cachedFeedbackWords.isNotEmpty) ...[
+                                SizedBox(height: r.spacing(12)),
+                                _buildFeedbackWordPanel(r),
+                              ],
                             ],
                           ],
                         ),
@@ -922,6 +1099,122 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // FEEDBACK WORD CHIP PANEL (Opsi A)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildFeedbackWordPanel(ResponsiveHelper r) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: _feedbackHighlightWord,
+      builder: (context, activeWord, _) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: double.infinity,
+          padding: EdgeInsets.all(r.spacing(14)),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _isFeedbackTtsActive
+                  ? Colors.deepOrange.shade200
+                  : Colors.grey.shade200,
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header panel
+              Row(
+                children: [
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _isTtsPlayingNotifier,
+                    builder: (_, playing, __) => AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: playing && _isFeedbackTtsActive
+                          ? Row(
+                              key: const ValueKey('playing'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.volume_up_rounded,
+                                    size: r.size(14),
+                                    color: Colors.deepOrange.shade600),
+                                SizedBox(width: r.spacing(5)),
+                                Text(
+                                  'Yuk perhatikan kata-kata ini:',
+                                  style: GoogleFonts.comicNeue(
+                                    fontSize: r.font(11),
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.deepOrange.shade700,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              key: const ValueKey('idle'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.info_outline_rounded,
+                                    size: r.size(14),
+                                    color: Colors.grey.shade600),
+                                SizedBox(width: r.spacing(5)),
+                                Text(
+                                  'Kata yang perlu diperhatikan:',
+                                  style: GoogleFonts.comicNeue(
+                                    fontSize: r.font(11),
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: r.spacing(10)),
+
+              // Chips kata bermasalah
+              Wrap(
+                spacing: r.spacing(8),
+                runSpacing: r.spacing(8),
+                children: _cachedFeedbackWords.map((fw) {
+                  final isActive = activeWord != null &&
+                      fw.word.toLowerCase() == activeWord;
+                  return _FeedbackWordChip(
+                    feedbackWord: fw,
+                    isActive: isActive,
+                    r: r,
+                    evalWrong: _evalWrong,
+                    evalPartial: _evalPartial,
+                  );
+                }).toList(),
+              ),
+
+              // Legenda
+              SizedBox(height: r.spacing(10)),
+              Wrap(
+                spacing: r.spacing(12),
+                children: [
+                  _MiniLegend(color: _evalWrong,   emoji: '❌', label: 'Salah', r: r),
+                  _MiniLegend(color: _evalPartial, emoji: '🟡', label: 'Kurang Tepat', r: r),
+                  _MiniLegend(color: Colors.blueGrey.shade400, emoji: '⚪', label: 'Terlewat', r: r),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // FOOTER
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -1037,28 +1330,44 @@ class _PracticeMicPanelState extends State<PracticeMicPanel>
 
 class _TtsBadge extends StatelessWidget {
   final ResponsiveHelper r;
-  const _TtsBadge({required this.r});
+  final bool isFeedbackMode;
+  const _TtsBadge({required this.r, this.isFeedbackMode = false});
   @override
   Widget build(BuildContext context) => Container(
         padding: EdgeInsets.symmetric(
             horizontal: r.spacing(14), vertical: r.spacing(6)),
         decoration: BoxDecoration(
-          color: Colors.blue.shade50,
+          color: isFeedbackMode
+              ? Colors.deepOrange.shade50
+              : Colors.blue.shade50,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.blue.shade200),
+          border: Border.all(
+            color: isFeedbackMode
+                ? Colors.deepOrange.shade200
+                : Colors.blue.shade200,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.volume_up_rounded,
-                color: Colors.blue.shade700, size: r.size(13)),
+            Icon(
+              Icons.volume_up_rounded,
+              color: isFeedbackMode
+                  ? Colors.deepOrange.shade700
+                  : Colors.blue.shade700,
+              size: r.size(13),
+            ),
             SizedBox(width: r.spacing(5)),
-            Text('🔊 Memutar kalimat...',
-                style: GoogleFonts.comicNeue(
-                  fontSize: r.font(11),
-                  fontWeight: FontWeight.w900,
-                  color: Colors.blue.shade700,
-                )),
+            Text(
+              isFeedbackMode ? '🎧 Membacakan feedback...' : '🔊 Memutar kalimat...',
+              style: GoogleFonts.comicNeue(
+                fontSize: r.font(11),
+                fontWeight: FontWeight.w900,
+                color: isFeedbackMode
+                    ? Colors.deepOrange.shade700
+                    : Colors.blue.shade700,
+              ),
+            ),
           ],
         ),
       );
@@ -1193,6 +1502,114 @@ class _ColorLegend extends StatelessWidget {
           Text(label, style: GoogleFonts.comicNeue(
               fontSize: r.font(10), color: Colors.grey.shade700,
               fontWeight: FontWeight.bold)),
+        ],
+      );
+}
+
+// ── Chip kata bermasalah di Feedback Panel ──────────────────────────────────────────
+class _FeedbackWordChip extends StatelessWidget {
+  final _FeedbackWord feedbackWord;
+  final bool isActive;
+  final ResponsiveHelper r;
+  final Color evalWrong;
+  final Color evalPartial;
+
+  const _FeedbackWordChip({
+    required this.feedbackWord,
+    required this.isActive,
+    required this.r,
+    required this.evalWrong,
+    required this.evalPartial,
+  });
+
+  Color get _chipColor {
+    switch (feedbackWord.status) {
+      case WordStatus.incorrect:         return evalWrong;
+      case WordStatus.partially_correct: return evalPartial;
+      case WordStatus.missed:            return Colors.blueGrey.shade400;
+      default:                           return Colors.grey;
+    }
+  }
+
+  String get _chipEmoji {
+    switch (feedbackWord.status) {
+      case WordStatus.incorrect:         return '❌';
+      case WordStatus.partially_correct: return '🟡';
+      case WordStatus.missed:            return '⚪';
+      default:                           return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _chipColor;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: EdgeInsets.symmetric(
+          horizontal: r.spacing(12), vertical: r.spacing(7)),
+      decoration: BoxDecoration(
+        color: isActive
+            ? color.withValues(alpha: 0.18)
+            : color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: isActive ? color : color.withValues(alpha: 0.4),
+          width: isActive ? 2.0 : 1.2,
+        ),
+        boxShadow: isActive
+            ? [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.30),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ]
+            : [],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(_chipEmoji, style: TextStyle(fontSize: r.font(12))),
+          SizedBox(width: r.spacing(4)),
+          Text(
+            feedbackWord.word,
+            style: GoogleFonts.comicNeue(
+              fontSize: r.font(14),
+              fontWeight: isActive ? FontWeight.w900 : FontWeight.bold,
+              color: isActive ? color : color.withValues(alpha: 0.85),
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Mini legenda di bawah chip panel ──────────────────────────────────────────────
+class _MiniLegend extends StatelessWidget {
+  final Color color;
+  final String emoji;
+  final String label;
+  final ResponsiveHelper r;
+  const _MiniLegend({
+    required this.color, required this.emoji,
+    required this.label, required this.r,
+  });
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(emoji, style: TextStyle(fontSize: r.font(10))),
+          SizedBox(width: r.spacing(3)),
+          Text(
+            label,
+            style: GoogleFonts.comicNeue(
+              fontSize: r.font(9),
+              color: color.withValues(alpha: 0.8),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       );
 }

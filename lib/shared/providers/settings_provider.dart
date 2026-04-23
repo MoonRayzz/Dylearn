@@ -19,7 +19,8 @@ class SettingsProvider with ChangeNotifier {
   static const String _keyLanguageCode   = 'language_code';
   static const String _keyFontFamily     = 'app_font_family';
   static const String _keyLetterSpacing  = 'app_letter_spacing';
-  static const String _keyLineHeight     = 'app_line_height';
+  static const String _keyLineHeight       = 'app_line_height';
+  static const String _keyFeedbackTts     = 'enable_feedback_tts';
 
   static const MapEquality<String, String> _mapEquality = MapEquality();
 
@@ -36,6 +37,7 @@ class SettingsProvider with ChangeNotifier {
 
   bool   _enableSyllable  = false;
   bool   _enableRuler     = false;
+  bool   _enableFeedbackTts = true;
   double _rulerOpacity    = 0.6;
 
   String _fontFamily      = 'OpenDyslexic';
@@ -49,9 +51,10 @@ class SettingsProvider with ChangeNotifier {
   double get ttsRate          => _ttsRate;
   double get ttsPitch         => _ttsPitch;
   Map<String, String>? get selectedVoice => _selectedVoice;
-  bool   get enableSyllable   => _enableSyllable;
-  bool   get enableRuler      => _enableRuler;
-  double get rulerOpacity     => _rulerOpacity;
+  bool   get enableSyllable      => _enableSyllable;
+  bool   get enableRuler         => _enableRuler;
+  bool   get enableFeedbackTts   => _enableFeedbackTts;
+  double get rulerOpacity        => _rulerOpacity;
   String get fontFamily       => _fontFamily;
   double get letterSpacing    => _letterSpacing;
   double get lineHeight       => _lineHeight;
@@ -82,9 +85,10 @@ class SettingsProvider with ChangeNotifier {
     _textScaleFactor = prefs.getDouble(_keyTextScale)     ?? 1.0;
     _ttsRate         = prefs.getDouble(_keyTtsRate)       ?? 0.45;
     _ttsPitch        = prefs.getDouble(_keyTtsPitch)      ?? 1.1;
-    _enableSyllable  = prefs.getBool(_keyEnableSyllable)  ?? false;
-    _enableRuler     = prefs.getBool(_keyEnableRuler)     ?? false;
-    _rulerOpacity    = prefs.getDouble(_keyRulerOpacity)  ?? 0.6;
+    _enableSyllable    = prefs.getBool(_keyEnableSyllable)  ?? false;
+    _enableRuler       = prefs.getBool(_keyEnableRuler)     ?? false;
+    _enableFeedbackTts = prefs.getBool(_keyFeedbackTts)     ?? true;
+    _rulerOpacity      = prefs.getDouble(_keyRulerOpacity)  ?? 0.6;
     _fontFamily      = prefs.getString(_keyFontFamily)    ?? 'OpenDyslexic';
     _letterSpacing   = prefs.getDouble(_keyLetterSpacing) ?? 1.5;
     _lineHeight      = prefs.getDouble(_keyLineHeight)    ?? 1.8;
@@ -244,6 +248,13 @@ class SettingsProvider with ChangeNotifier {
     _microtaskSave(() => _prefs!.setBool(_keyEnableRuler, value));
   }
 
+  void toggleFeedbackTts(bool value) {
+    if (_enableFeedbackTts == value) return;
+    _enableFeedbackTts = value;
+    notifyListeners();
+    _microtaskSave(() => _prefs!.setBool(_keyFeedbackTts, value));
+  }
+
   void updateRulerOpacity(double value) {
     if (_rulerOpacity == value) return;
     _rulerOpacity = value;
@@ -286,10 +297,11 @@ class SettingsProvider with ChangeNotifier {
     _ttsRate         = 0.45;
     _ttsPitch        = 1.1;
     _selectedVoice   = null;
-    _enableSyllable  = false;
-    _enableRuler     = false;
-    _rulerOpacity    = 0.6;
-    _fontFamily      = 'OpenDyslexic';
+    _enableSyllable    = false;
+    _enableRuler       = false;
+    _enableFeedbackTts = true;
+    _rulerOpacity      = 0.6;
+    _fontFamily        = 'OpenDyslexic';
     _letterSpacing   = 1.5;
     _lineHeight      = 1.8;
     _themeMode       = ThemeMode.light;
@@ -305,6 +317,7 @@ class SettingsProvider with ChangeNotifier {
         _prefs!.remove(_keyTtsVoice),
         _prefs!.remove(_keyEnableSyllable),
         _prefs!.remove(_keyEnableRuler),
+        _prefs!.remove(_keyFeedbackTts),
         _prefs!.remove(_keyRulerOpacity),
         _prefs!.remove(_keyFontFamily),
         _prefs!.remove(_keyLetterSpacing),

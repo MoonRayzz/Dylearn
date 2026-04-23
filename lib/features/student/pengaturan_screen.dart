@@ -794,6 +794,47 @@ class _VoiceSettingsSection extends StatelessWidget {
                     await flutterTts.speak("Halo, ini contoh suara saya.");
                   },
                 )),
+            SizedBox(height: r.spacing(14)),
+            const Divider(),
+            SizedBox(height: r.spacing(4)),
+            // ── Toggle Feedback Suara Otomatis ────────────────────────────
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: Colors.deepOrange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.record_voice_over_rounded,
+                      color: Colors.deepOrange.shade600, size: r.size(15)),
+                ),
+                SizedBox(width: r.spacing(10)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Feedback Suara Otomatis",
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: r.font(13),
+                              color: Colors.black87)),
+                      Text(
+                        "Bacakan kata salah & terlewat setelah latihan",
+                        style: TextStyle(
+                            fontSize: r.font(11), color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: s.enableFeedbackTts,
+                  onChanged: s.toggleFeedbackTts,
+                  activeColor: Colors.deepOrange,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ],
+            ),
           ],
         )));
   }
